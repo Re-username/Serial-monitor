@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "/yhrX85fPsM=",
+  "dgSpecHash": "RCp3Jo7iOso=",
   "success": true,
-  "projectFilePath": "D:\\ESP32\\Serial monitor\\JoystickPlot.csproj",
+  "projectFilePath": "D:\\ESP32\\Serial monitor\\SerialPlotter.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\user01\\.nuget\\packages\\runtime.linux-arm.runtime.native.system.io.ports\\8.0.0\\runtime.linux-arm.runtime.native.system.io.ports.8.0.0.nupkg.sha512",
     "C:\\Users\\user01\\.nuget\\packages\\runtime.linux-arm64.runtime.native.system.io.ports\\8.0.0\\runtime.linux-arm64.runtime.native.system.io.ports.8.0.0.nupkg.sha512",

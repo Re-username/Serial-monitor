@@ -6,6 +6,11 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Product>Serial Plotter</Product>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- Позволяет собирать проект и на Linux/macOS (для проверки компиляции);
+         запускаться приложение по-прежнему будет только на Windows -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>

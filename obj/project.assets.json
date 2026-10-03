@@ -238,9 +238,9 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\ESP32\\Serial monitor\\JoystickPlot.csproj",
-      "projectName": "JoystickPlot",
-      "projectPath": "D:\\ESP32\\Serial monitor\\JoystickPlot.csproj",
+      "projectUniqueName": "D:\\ESP32\\Serial monitor\\SerialPlotter.csproj",
+      "projectName": "SerialPlotter",
+      "projectPath": "D:\\ESP32\\Serial monitor\\SerialPlotter.csproj",
       "packagesPath": "C:\\Users\\user01\\.nuget\\packages\\",
       "outputPath": "D:\\ESP32\\Serial monitor\\obj\\",
       "projectStyle": "PackageReference",
