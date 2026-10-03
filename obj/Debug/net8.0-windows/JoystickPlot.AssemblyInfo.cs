@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("JoystickPlot")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e740dc5f2293be1380a6614f99272699a1346020")]
 [assembly: System.Reflection.AssemblyProductAttribute("JoystickPlot")]
 [assembly: System.Reflection.AssemblyTitleAttribute("JoystickPlot")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
