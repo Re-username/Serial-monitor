@@ -1,5 +1,7 @@
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO.Ports;
+using System.Text;
 
 namespace SerialPlotter;
 
@@ -18,6 +20,7 @@ internal sealed class MainForm : Form
     private double _rotY = -0.7, _rotX = 0.5;
     private bool _dragging;
     private Point _lastMouse;
+    private Point _mousePos = new(-1, -1); // курсор на графике, для линейки
 
     private readonly PlotPanel _plot = new() { Dock = DockStyle.Fill };
     private readonly ChannelsPanel _channels = new();
@@ -29,6 +32,7 @@ internal sealed class MainForm : Form
     private readonly ComboBox _time3dBox = new();
     private readonly CheckBox _spinBox = new();
     private readonly Button _themeBtn = new();
+    private readonly Button _pauseBtn = new();
     private readonly SerialLink _serial = new();
     private readonly Simulator _sim = new();
     private SimulatorForm? _simForm;
@@ -36,8 +40,9 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "Serial Plotter";
-        ClientSize = new Size(1180, 720);
+        ClientSize = new Size(1240, 720);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+        HandleCreated += (_, _) => Theme.ApplyTitleBar(this);
 
         // Вращение 3D мышью
         _plot.MouseDown += (_, e) =>
@@ -46,13 +51,23 @@ internal sealed class MainForm : Form
         };
         _plot.MouseMove += (_, e) =>
         {
+            _mousePos = e.Location; // линейка следит за курсором
             if (!_dragging) return;
             _rotY += (e.X - _lastMouse.X) * 0.01;
             _rotX = Math.Clamp(_rotX + (e.Y - _lastMouse.Y) * 0.01, -1.5, 1.5);
             _lastMouse = e.Location;
         };
         _plot.MouseUp += (_, _) => _dragging = false;
+        _plot.MouseLeave += (_, _) => _mousePos = new Point(-1, -1);
         _plot.Paint += OnPaint;
+
+        // Экспорт: правый клик по графику
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Сохранить снимок PNG", null, (_, _) => SavePng());
+        menu.Items.Add("Сохранить снимок SVG", null, (_, _) => SaveSvg());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Экспорт данных в CSV", null, (_, _) => ExportCsv());
+        _plot.ContextMenuStrip = menu;
 
         // Порядок добавления важен: Fill добавляем первым — он докируется последним.
         // Итог: тулбар сверху на всю ширину, консоль снизу на всю ширину,
@@ -132,31 +147,51 @@ internal sealed class MainForm : Form
         var simBtn = new Button { Text = "Симулятор", Left = 674, Top = 9, Width = 100 };
         simBtn.Click += (_, _) => ShowSimulator();
 
+        _pauseBtn.Text = "Пауза";
+        _pauseBtn.Left = 784; _pauseBtn.Top = 9; _pauseBtn.Width = 90;
+        _pauseBtn.Click += (_, _) =>
+        {
+            DataHub.Paused = !DataHub.Paused;
+            _pauseBtn.Text = DataHub.Paused ? "Продолжить" : "Пауза";
+            UpdateTitle();
+        };
+
         // Ось времени в 3D: «без времени» или t на оси X/Y/Z;
         // две оставшиеся оси занимают первые два видимых канала
-        _time3dBox.Left = 904; _time3dBox.Top = 11; _time3dBox.Width = 135;
+        _time3dBox.Left = 1002; _time3dBox.Top = 11; _time3dBox.Width = 118;
         _time3dBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _time3dBox.Items.AddRange(new object[] { "3D: без времени", "3D: t → X", "3D: t → Y", "3D: t → Z" });
         _time3dBox.SelectedIndex = 0;
 
         _spinBox.Text = "Вращение";
-        _spinBox.Left = 1048; _spinBox.Top = 14; _spinBox.Width = 90;
+        _spinBox.Left = 1126; _spinBox.Top = 14; _spinBox.Width = 80;
         _spinBox.Checked = true;
 
         // Настройки 3D видны только в 3D-режиме
         _time3dBox.Visible = _spinBox.Visible = false;
 
-        _themeBtn.Text = "Светлая тема";
-        _themeBtn.Left = 784; _themeBtn.Top = 9; _themeBtn.Width = 110;
+        _themeBtn.Text = "Тема: Киберпанк";
+        _themeBtn.Left = 882; _themeBtn.Top = 9; _themeBtn.Width = 112;
         _themeBtn.Click += (_, _) =>
         {
-            Theme.Dark = !Theme.Dark;
-            _themeBtn.Text = Theme.Dark ? "Светлая тема" : "Тёмная тема";
+            Theme.Kind = Theme.Kind switch
+            {
+                ThemeKind.Dark => ThemeKind.Light,
+                ThemeKind.Light => ThemeKind.Cyberpunk,
+                _ => ThemeKind.Dark,
+            };
+            _themeBtn.Text = $"Тема: {Theme.Kind switch
+            {
+                ThemeKind.Dark => "Тёмная",
+                ThemeKind.Light => "Светлая",
+                _ => "Киберпанк",
+            }}";
             Theme.Apply(this);
+            Theme.ApplyTitleBar(this);
         };
 
         panel.Controls.AddRange(new Control[]
-            { _portBox, _baudBox, refreshBtn, _connectBtn, _modeBtn, simBtn, _themeBtn, _time3dBox, _spinBox });
+            { _portBox, _baudBox, refreshBtn, _connectBtn, _modeBtn, simBtn, _pauseBtn, _themeBtn, _time3dBox, _spinBox });
         Controls.Add(panel);
 
         RefreshPorts();
@@ -259,15 +294,38 @@ internal sealed class MainForm : Form
     }
 
     private void UpdateTitle() =>
-        Text = $"Serial Plotter — {_status} — {MODE_NAMES[_mode]}";
+        Text = $"Serial Plotter — {_status} — {MODE_NAMES[_mode]}" + (DataHub.Paused ? " — ПАУЗА" : "");
 
     // --- Отрисовка ---
 
     private void OnPaint(object? sender, PaintEventArgs e)
     {
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
+        // Рисуем в собственный Bitmap и копируем на экран: встроенный
+        // BufferedGraphics (DoubleBuffered) падает с "Parameter is not valid"
+        // в Graphics.GetHdc — известная проблема WinForms.
+        try
+        {
+            using var bmp = new Bitmap(Math.Max(1, _plot.ClientSize.Width), Math.Max(1, _plot.ClientSize.Height));
+            using (var bg = Graphics.FromImage(bmp))
+            {
+                bg.Clear(Theme.Bg); // фон под всем кадром, включая поля вокруг графика
+                bg.SmoothingMode = SmoothingMode.AntiAlias;
+                using var gg = new SvgNet.GdiGraphics(bg);
+                RenderPlot(gg);
+            }
+            e.Graphics.DrawImage(bmp, 0, 0);
+        }
+        catch
+        {
+            // один испорченный кадр не должен ронять приложение-монитор
+        }
+    }
 
+    // Вся отрисовка графика; используется и для показа на экране, и для экспорта.
+    // IGraphics — общий интерфейс экранного Graphics и векторного SvgGraphics.
+    // forExport: снимок без линейки курсора.
+    private void RenderPlot(SvgNet.Interfaces.IGraphics g, bool forExport = false)
+    {
         var rect = new Rectangle(40, 40, _plot.ClientSize.Width - 60, _plot.ClientSize.Height - 80);
         var ctx = new PlotContext
         {
@@ -276,6 +334,8 @@ internal sealed class MainForm : Form
             RotX = _rotX,
             RotY = _rotY,
             Time3DAxis = _time3dBox.SelectedIndex,
+            MouseX = forExport ? -1 : _mousePos.X,
+            MouseY = forExport ? -1 : _mousePos.Y,
         };
 
         switch (_mode)
@@ -287,14 +347,119 @@ internal sealed class MainForm : Form
 
         using var font = new Font("Segoe UI", 10f);
         using var textBrush = new SolidBrush(Theme.Text);
+
+        // Легенда — под графиком, чтобы не перекрывать линии:
+        // цветной квадрат, имя и текущее значение каждого видимого канала
+        if (_mode == MODE_TIME)
+        {
+            int lx = rect.Left;
+            foreach (var ch in ctx.YChannels)
+            {
+                using var dotBrush = new SolidBrush(ch.Color);
+                g.FillRectangle(dotBrush, lx, rect.Bottom + 24, 10, 10);
+                string label = $"{ch.Name} = {ch.Last:0.##}";
+                using var legendFont = new Font("Segoe UI", 10f, FontStyle.Bold);
+                using var legendBrush = new SolidBrush(ch.Color);
+                g.DrawString(label, legendFont, legendBrush, lx + 14, rect.Bottom + 20);
+                lx += (int)PlotUtil.Measure(g, label, legendFont).Width + 34;
+            }
+        }
+
         g.DrawString($"{_status}   каналов: {DataHub.Channels.Count}   " +
                      $"точек: {DataHub.Channels.FirstOrDefault()?.Data.Count ?? 0}",
-                     font, textBrush, rect.Left, rect.Bottom + 22);
+                     font, textBrush, rect.Left, rect.Bottom + 42);
     }
+
+    // --- Экспорт ---
+
+    private void SavePng()
+    {
+        using var dlg = new SaveFileDialog
+        {
+            Filter = "PNG-изображение|*.png",
+            FileName = "serialplot.png",
+            Title = "Сохранить снимок графика",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        using var bmp = new Bitmap(Math.Max(1, _plot.ClientSize.Width), Math.Max(1, _plot.ClientSize.Height));
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using var gg = new SvgNet.GdiGraphics(g);
+            RenderPlot(gg, forExport: true);
+        }
+        bmp.Save(dlg.FileName, System.Drawing.Imaging.ImageFormat.Png);
+        _status = $"снимок сохранён: {Path.GetFileName(dlg.FileName)}";
+        UpdateTitle();
+    }
+
+    private void SaveSvg()
+    {
+        using var dlg = new SaveFileDialog
+        {
+            Filter = "SVG-изображение|*.svg",
+            FileName = "serialplot.svg",
+            Title = "Сохранить снимок графика",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        // SvgGraphics — Graphics-совместимый векторный холст,
+        // тот же код отрисовки рисует сразу в SVG
+        using var svg = new SvgNet.SvgGraphics();
+        RenderPlot(svg, forExport: true);
+        File.WriteAllText(dlg.FileName,
+            svg.WriteSVGString(_plot.ClientSize.Width, _plot.ClientSize.Height));        _status = $"снимок сохранён: {Path.GetFileName(dlg.FileName)}";
+        UpdateTitle();
+    }
+
+    private void ExportCsv()
+    {
+        if (DataHub.Channels.Count == 0 || DataHub.Channels.All(c => c.Data.Count == 0))
+        {
+            MessageBox.Show(this, "Нет данных для экспорта.", "Экспорт CSV",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dlg = new SaveFileDialog
+        {
+            Filter = "CSV (разделитель — запятая)|*.csv",
+            FileName = "serialplot.csv",
+            Title = "Экспорт данных каналов",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        var arrays = DataHub.Channels.Select(c => c.Data.ToArray()).ToArray();
+        int n = arrays.Max(a => a.Length);
+
+        var sb = new StringBuilder();
+        sb.AppendLine(string.Join(",", DataHub.Channels.Select(c => CsvCell(c.Name))));
+        for (int i = 0; i < n; i++)
+        {
+            int row = i;
+            sb.AppendLine(string.Join(",",
+                arrays.Select(a => row < a.Length ? a[row].ToString("G9", CultureInfo.InvariantCulture) : "")));
+        }
+
+        File.WriteAllText(dlg.FileName, sb.ToString());
+        _status = $"CSV сохранён: {Path.GetFileName(dlg.FileName)}";
+        UpdateTitle();
+    }
+
+    private static string CsvCell(string s) =>
+        s.Contains(',') || s.Contains('"') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
 }
 
-// Панель графика с двойной буферизацией — без мерцания при перерисовке
+// Панель графика. Двойной буфер делаем сами в MainForm.OnPaint
+// (Bitmap + DrawImage): встроенный BufferedGraphics периодически падает
+// с "Parameter is not valid" в Graphics.GetHdc — известная проблема WinForms.
+// UserPaint + AllPaintingInWmPaint + Opaque: система не стирает фон сама
+// (иначе мерцает), весь кадр рисуем мы одним Bitmap.
 internal sealed class PlotPanel : Panel
 {
-    public PlotPanel() => DoubleBuffered = true;
+    public PlotPanel() =>
+        SetStyle(ControlStyles.UserPaint |
+                 ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.Opaque, true);
 }

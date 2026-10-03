@@ -10,6 +10,9 @@ public static class DataHub
 
     public static readonly List<Channel> Channels = new();
 
+    // Пауза записи: сырые строки уходят в консоль, но в каналы не добавляются
+    public static bool Paused;
+
     // Структура каналов изменилась (добавились каналы / пришёл заголовок имён)
     public static event Action? ChannelsChanged;
 
@@ -22,9 +25,16 @@ public static class DataHub
         ChannelsChanged?.Invoke();
     }
 
+    // Каналы не добавились/не удалились, но их свойства изменились
+    // (пользователь переименовал канал) — просим интерфейс перестроиться.
+    public static void NotifyChannelsChanged() => ChannelsChanged?.Invoke();
+
     public static void PushLine(string line)
     {
         RawLine?.Invoke(line);
+
+        if (Paused)
+            return; // запись на паузе — данные только в консоль
 
         line = line.Trim();
         if (line.Length == 0 || !line.Contains(','))

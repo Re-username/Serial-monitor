@@ -1,3 +1,4 @@
+using SvgNet.Interfaces;
 using System.Drawing.Drawing2D;
 
 namespace SerialPlotter;
@@ -6,7 +7,7 @@ namespace SerialPlotter;
 // Выбор пары — галочками видимости в менеджере каналов.
 public static class PolarPlot
 {
-    public static void Draw(Graphics g, Rectangle rect, PlotContext ctx)
+    public static void Draw(IGraphics g, Rectangle rect, PlotContext ctx)
     {
         int cx = rect.Left + rect.Width / 2;
         int cy = rect.Top + rect.Height / 2;

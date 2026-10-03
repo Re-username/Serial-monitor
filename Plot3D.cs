@@ -1,3 +1,4 @@
+using SvgNet.Interfaces;
 namespace SerialPlotter;
 
 // 3D-режим: первые три видимых канала как траектория в пространстве.
@@ -24,7 +25,7 @@ public static class Plot3D
         return new PointF((float)(cx + rx * R), (float)(cy - ry * R));
     }
 
-    public static void Draw(Graphics g, Rectangle rect, PlotContext ctx)
+    public static void Draw(IGraphics g, Rectangle rect, PlotContext ctx)
     {
         using (var brush = new SolidBrush(Theme.PlotBg))
             g.FillRectangle(brush, rect);
@@ -135,7 +136,7 @@ public static class Plot3D
         {
             string label = $"{names[i]} = {(series[i].Length > 0 ? series[i][^1] : 0):0.##}";
             g.DrawString(label, legendFont, new SolidBrush(colors[i]), lx, rect.Top + 8);
-            lx += (int)g.MeasureString(label, legendFont).Width + 24;
+            lx += (int)PlotUtil.Measure(g, label, legendFont).Width + 24;
         }
 
         using var hintFont = new Font("Segoe UI", 9f);
