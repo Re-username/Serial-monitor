@@ -16,6 +16,17 @@ dotnet build          # собрать
 dotnet run            # собрать и запустить
 ```
 
+Готовое приложение одним файлом (без установленного .NET на целевой машине,
+без папок с языками и DLL — всё внутри exe, ~70 МБ):
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained true \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+  -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+```
+
+Результат — `publish/SerialPlotter.exe`, можно копировать и запускать на любом Windows x64.
+
 Либо открыть папку проекта в Visual Studio / Rider и запустить как обычно.
 Единственная зависимость — пакет `System.IO.Ports` (подтянется NuGet'ом автоматически).
 
