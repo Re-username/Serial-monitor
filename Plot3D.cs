@@ -87,29 +87,36 @@ public static class Plot3D
         double R = Math.Min(rect.Width, rect.Height) / 2 - 30;
         double rotX = ctx.RotX, rotY = ctx.RotY;
 
+        // После поворота куб проецируется радиусом до √2·R — без ограничения
+        // линии (на экране и в SVG) уходили бы за края области графика
+        PointF ClampPt(PointF p) => new(
+            Math.Clamp(p.X, rect.Left, rect.Right),
+            Math.Clamp(p.Y, rect.Top, rect.Bottom));
+
         // Границы куба [-1,1]^3
         var corners = new PointF[8];
         for (int i = 0; i < 8; i++)
-            corners[i] = Project3D(mid[0] + ((i & 1) != 0 ? 1 : -1) * half[0],
-                                   mid[1] + ((i & 2) != 0 ? 1 : -1) * half[1],
-                                   mid[2] + ((i & 4) != 0 ? 1 : -1) * half[2],
-                                   mid, half, rotX, rotY, cx, cy, R);
+            corners[i] = ClampPt(Project3D(mid[0] + ((i & 1) != 0 ? 1 : -1) * half[0],
+                                           mid[1] + ((i & 2) != 0 ? 1 : -1) * half[1],
+                                           mid[2] + ((i & 4) != 0 ? 1 : -1) * half[2],
+                                           mid, half, rotX, rotY, cx, cy, R));
         for (int i = 0; i < 8; i++)
             for (int b = 1; b < 8; b <<= 1)
                 if ((i & b) == 0)
                     g.DrawLine(gridPen, corners[i], corners[i | b]);
 
         // Оси с именами каналов
-        var origin = Project3D(mid[0], mid[1], mid[2], mid, half, rotX, rotY, cx, cy, R);
+        var origin = ClampPt(Project3D(mid[0], mid[1], mid[2], mid, half, rotX, rotY, cx, cy, R));
         using var axisFont = new Font("Segoe UI", 10f, FontStyle.Bold);
         for (int i = 0; i < 3; i++)
         {
             var tip = new double[] { mid[0], mid[1], mid[2] };
             tip[i] += half[i];
-            var p = Project3D(tip[0], tip[1], tip[2], mid, half, rotX, rotY, cx, cy, R);
+            var p = ClampPt(Project3D(tip[0], tip[1], tip[2], mid, half, rotX, rotY, cx, cy, R));
             using var axisPen = new Pen(colors[i], 2);
             g.DrawLine(axisPen, origin, p);
-            g.DrawString(names[i], axisFont, new SolidBrush(colors[i]), p.X + 4, p.Y - 8);
+            g.DrawString(names[i], axisFont, new SolidBrush(colors[i]),
+                         Math.Clamp(p.X + 4, rect.Left, rect.Right - 30), p.Y - 8);
         }
 
         // Траектория
@@ -118,7 +125,7 @@ public static class Plot3D
             using var trailPen = new Pen(Color.FromArgb(110, colors[2])) { Width = 2 };
             var pts = new PointF[n];
             for (int i = 0; i < n; i++)
-                pts[i] = Project3D(series[0][i], series[1][i], series[2][i], mid, half, rotX, rotY, cx, cy, R);
+                pts[i] = ClampPt(Project3D(series[0][i], series[1][i], series[2][i], mid, half, rotX, rotY, cx, cy, R));
             g.DrawLines(trailPen, pts);
 
             // Текущая точка

@@ -16,6 +16,8 @@ public sealed class Channel
     public bool Visible = true;
     public float LineWidth = 2;             // толщина линии на графике
     public LineKind LineStyle = LineKind.Solid;
+    public SmoothKind Smooth = SmoothKind.None; // сглаживание (слой поверх линии)
+    public int SmoothWindow = 5;            // окно сглаживания, точек (нечётное)
     public double Last;                     // последнее полученное значение
     public readonly Queue<double> Data = new();
 }
@@ -27,6 +29,14 @@ public enum LineKind
     Dash,       // штриховая
     Dot,        // пунктирная
     DashDot,    // штрих-пунктир
+}
+
+// Сглаживание канала: рисуется отдельным слоем поверх исходной линии.
+public enum SmoothKind
+{
+    None,          // без сглаживания
+    MovingAverage, // скользящее среднее
+    Median,        // медианный фильтр
 }
 
 public static class LineKindExt
@@ -42,6 +52,7 @@ public static class LineKindExt
 
 // Заданные пользователем диапазоны графика (режим «Время»).
 // Когда автоматика включена — диапазон считается по данным, как раньше.
+// ViewX/ViewY — зум и панорама мышью: когда заданы, перекрывают всё остальное.
 public static class PlotSettings
 {
     public static bool YAuto = true;    // автомасштаб по амплитуде
@@ -49,6 +60,37 @@ public static class PlotSettings
 
     public static double YMin = -1, YMax = 1;
     public static double XMin = 0, XMax = DataHub.HISTORY;
+
+    // Автоширина окна по времени: новые точки появляются справа,
+    // заполненное окно прокручивается влево. Внутри окна — последние
+    // AutoWindow точек буфера (история HISTORY доступна зумом/панорамой).
+    public const int AutoWindow = 400;
+
+    // Вид (зум/панорама) в единицах оси X и Y; null — не задан
+    public static double? ViewXMin, ViewXMax, ViewYMin, ViewYMax;
+
+    // Маркеры измерений (в единицах оси X); null — не установлен
+    public static double? MarkerA, MarkerB;
+
+    // Частота дискретизации для FFT/Δt, Гц (зависит от устройства)
+    public static double SampleRate = 50;
+
+    public static bool FftLog = true;   // FFT: логарифмическая шкала (дБ)
+
+    // Глобальное сглаживание (меню «Инструменты»): по умолчанию выключено.
+    // Применяется к каналам, у которых не задано своё сглаживание.
+    public static SmoothKind GlobalSmooth = SmoothKind.None;
+    public static int GlobalSmoothWindow = 9;
+
+    // Пределы, которые реально использовались в последней отрисовке —
+    // MainForm пересчитывает по ним пиксели мыши в значения данных
+    public static double LastXMin, LastXMax, LastYMin, LastYMax;
+
+    public static void ResetView()
+    {
+        ViewXMin = ViewXMax = ViewYMin = ViewYMax = null;
+        MarkerA = MarkerB = null;
+    }
 
     // Диапазон Y с учётом автофлага; из данных берётся только при автоматике.
     public static (double Min, double Max) ResolveY(bool auto, double dataMin, double dataMax)
@@ -99,4 +141,7 @@ public sealed class PlotContext
 
     // Позиция курсора на панели графика для линейки; -1 — курсор вне панели.
     public int MouseX = -1, MouseY = -1;
+
+    // true при экспорте PNG/SVG: без линейки, маркеров и рамки выделения
+    public bool ForExport;
 }

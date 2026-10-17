@@ -48,15 +48,25 @@ public static class PolarPlot
         double half = Math.Max(halfX, halfY);
 
         using var font = new Font("Segoe UI", 10f);
-        g.DrawString(half.ToString("0.##"), font, textBrush, cx + R + 4, cy - 8);
+        string rLabel = half.ToString("0.##");
+        g.DrawString(rLabel, font, textBrush,
+                     Math.Min(cx + R + 4, rect.Right - PlotUtil.Measure(g, rLabel, font).Width),
+                     cy - 8);
         g.DrawString($"Центр = ({cX:0.##}, {cY:0.##}),   R — отклонение от центра,   φ — от оси +{chX.Name}",
                      font, textBrush, rect.Left + 8, rect.Bottom - 22);
 
         int n = Math.Min(chX.Data.Count, chY.Data.Count);
         if (n == 0) return;
 
-        var xd = chX.Data.ToArray();
-        var yd = chY.Data.ToArray();
+        // Хвост траектории жёстко ограничен: стоимость DrawLines растёт
+        // квадратично с числом самопересечений ломаной, и несколько тысяч
+        // точек на одном кадре дают ~90 мс — полярный режим лагал
+        const int MaxTrail = 400;
+        int skip = Math.Max(0, n - MaxTrail);
+
+        var xd = chX.Data.Skip(skip).ToArray();
+        var yd = chY.Data.Skip(skip).ToArray();
+        n = xd.Length;
 
         PointF ToScreen(double x, double y)
         {

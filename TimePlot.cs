@@ -6,6 +6,11 @@ namespace SerialPlotter;
 // Режим «Время»: графики каналов по времени.
 // Если в менеджере каналов на ось X выбран канал — превращается в XY-график:
 // по горизонтали выбранный канал, по вертикали все остальные видимые.
+//
+// Ось времени — абсолютный индекс точки. Автоокно (PlotSettings.AutoWindow)
+// прижато к правому краю: новые точки появляются справа, заполненное окно
+// прокручивается влево. Зум/панорама (ViewX/ViewY) показывают историю
+// глубиной DataHub.HISTORY. Сглаживание каналов рисуется отдельным слоем.
 public static class TimePlot
 {
     public static void Draw(IGraphics g, Rectangle rect, PlotContext ctx)
@@ -29,16 +34,19 @@ public static class TimePlot
         var ys = ctx.YChannels.ToList();
         if (ys.Count == 0)
         {
+            PlotSettings.LastXMin = 0; PlotSettings.LastXMax = 1;
+            PlotSettings.LastYMin = 0; PlotSettings.LastYMax = 1;
             PlotUtil.Hint(g, rect, "Нет видимых каналов — отметь их в панели справа");
             return;
         }
 
         bool timeMode = ctx.XChannel == null;
+        int count = ctx.Visible.Max(c => c.Data.Count);
 
-        // Ось X: время (индекс точки) или выбранный канал
+        // Ось X: время (абсолютный индекс точки) или выбранный канал
         Channel? xc = ctx.XChannel;
         double[]? xs = null;
-        double xmin = 0, xmax = DataHub.HISTORY - 1;
+        double xmin, xmax;
 
         if (xc != null)
         {
@@ -53,8 +61,21 @@ public static class TimePlot
         }
         else
         {
-            (_, xmax) = PlotSettings.ResolveX(PlotSettings.XAuto, 0, DataHub.HISTORY - 1, timeMode: true);
+            // Автоокно прижато к правому краю: последние N точек
+            double w = PlotSettings.XAuto
+                ? Math.Min(Math.Max(count, 2), PlotSettings.AutoWindow)
+                : Math.Clamp(Math.Max(PlotSettings.XMax, PlotSettings.XMin), 2, DataHub.HISTORY);
+            xmax = Math.Max(count - 1, 1);
+            xmin = Math.Max(0, xmax - w + 1);
         }
+
+        // Зум/панорама перекрывает всё
+        if (PlotSettings.ViewXMin is { } vx0 && PlotSettings.ViewXMax is { } vx1 && vx1 > vx0)
+        {
+            xmin = timeMode ? Math.Max(0, vx0) : vx0;
+            xmax = vx1;
+        }
+        if (xmax - xmin < 1e-9) xmax = xmin + 1;
 
         // Общий масштаб по вертикали для всех видимых каналов
         double dymin = double.MaxValue, dymax = double.MinValue;
@@ -66,24 +87,34 @@ public static class TimePlot
         }
         if (dymax - dymin < 1e-9) { dymin -= 1; dymax += 1; }
         var (ymin, ymax) = PlotSettings.ResolveY(PlotSettings.YAuto, dymin, dymax);
+        if (PlotSettings.ViewYMin is { } vy0 && PlotSettings.ViewYMax is { } vy1 && vy1 > vy0)
+            (ymin, ymax) = (vy0, vy1);
+        if (ymax - ymin < 1e-9) ymax = ymin + 1;
+
+        // Реально использованные пределы — для пересчёта мыши в значения
+        PlotSettings.LastXMin = xmin; PlotSettings.LastXMax = xmax;
+        PlotSettings.LastYMin = ymin; PlotSettings.LastYMax = ymax;
 
         using var centerPen = new Pen(Theme.Axis) { DashStyle = DashStyle.Dash };
         double ymid = (ymin + ymax) / 2;
         int cy = rect.Bottom - (int)(rect.Height * (ymid - ymin) / (ymax - ymin));
         g.DrawLine(centerPen, rect.Left, cy, rect.Right, cy);
 
+        if (xc != null)
+        {
+            double xmid = (xmin + xmax) / 2;
+            int cx2 = rect.Left + (int)(rect.Width * (xmid - xmin) / (xmax - xmin));
+            g.DrawLine(centerPen, cx2, rect.Top, cx2, rect.Bottom);
+        }
+
         using var font = new Font("Segoe UI", 10f);
         g.DrawString(ymax.ToString("0.##"), font, textBrush, rect.Left - 45, rect.Top - 6);
         g.DrawString(ymid.ToString("0.##"), font, textBrush, rect.Left - 45, cy - 8);
         g.DrawString(ymin.ToString("0.##"), font, textBrush, rect.Left - 45, rect.Bottom - 10);
 
+        // Подписи диапазона по оси X
         if (xc != null)
         {
-            // Ось X от канала: средняя линия и подписи диапазона
-            double xmid = (xmin + xmax) / 2;
-            int cx2 = rect.Left + (int)(rect.Width * (xmid - xmin) / (xmax - xmin));
-            g.DrawLine(centerPen, cx2, rect.Top, cx2, rect.Bottom);
-
             g.DrawString(xmin.ToString("0.##"), font, textBrush, rect.Left, rect.Bottom + 4);
             string maxLabel = xmax.ToString("0.##");
             g.DrawString(maxLabel, font, textBrush,
@@ -93,16 +124,15 @@ public static class TimePlot
                          rect.Left + (rect.Width - PlotUtil.Measure(g, nameLabel, font).Width) / 2,
                          rect.Bottom + 4);
         }
-        else if (!PlotSettings.XAuto)
+        else
         {
-            // Ручное окно по времени: подписи — сколько точек показано
-            g.DrawString("0", font, textBrush, rect.Left, rect.Bottom + 4);
-            string maxLabel = $"{(int)xmax + 1} точ.";
+            g.DrawString($"{(long)Math.Max(0, xmin)}", font, textBrush, rect.Left, rect.Bottom + 4);
+            string maxLabel = $"{(long)xmax + 1} точ.";
             g.DrawString(maxLabel, font, textBrush,
                          rect.Right - PlotUtil.Measure(g, maxLabel, font).Width, rect.Bottom + 4);
         }
 
-        // Линии графиков
+        // Линии графиков (и слой сглаживания поверх)
         foreach (var ch in ys)
         {
             var data = ch.Data.ToArray();
@@ -111,37 +141,180 @@ public static class TimePlot
 
             if (xs == null)
             {
-                // Ось X — время: последние (xmax+1) точек равномерно по ширине
-                int window = (int)xmax + 1;
-                int n = Math.Min(window, data.Length);
-                int skip = data.Length - n; // начало окна в буфере
-                var points = new Point[n];
-                for (int i = 0; i < n; i++)
+                // Ось X — время: точки с абсолютными индексами из [xmin, xmax]
+                int k0 = Math.Max(0, (int)Math.Ceiling(xmin));
+                int k1 = Math.Min(data.Length - 1, (int)Math.Floor(xmax));
+                if (k1 < k0) continue;
+                if (EffectiveSmooth(ch, out int win))
                 {
-                    int px = rect.Left + rect.Width * i / (window - 1);
-                    int py = rect.Bottom - (int)(rect.Height * (data[skip + i] - ymin) / (ymax - ymin));
-                    points[i] = new Point(px, Math.Clamp(py, rect.Top, rect.Bottom));
+                    // Сглаживание включено — оригинальную линию не рисуем,
+                    // показываем только сглаженный слой
+                    DrawSmoothed(g, data, ch, win, rect, xmin, xmax, ymin, ymax,
+                                 sm => MapTime(sm, k0, k1, xmin, xmax, ymin, ymax, rect));
                 }
-                g.DrawLines(pen, points);
+                else
+                {
+                    var points = MapTime(data, k0, k1, xmin, xmax, ymin, ymax, rect);
+                    g.DrawLines(pen, points);
+                }
             }
             else
             {
                 // XY-режим: пары (x[i], y[i])
                 int n = Math.Min(xs.Length, data.Length);
                 if (n < 2) continue;
-                var points = new PointF[n];
-                for (int i = 0; i < n; i++)
+                if (EffectiveSmooth(ch, out int win))
                 {
-                    float px = rect.Left + (float)(rect.Width * (xs[i] - xmin) / (xmax - xmin));
-                    float py = rect.Bottom - (float)(rect.Height * (data[i] - ymin) / (ymax - ymin));
-                    points[i] = new PointF(Math.Clamp(px, rect.Left, rect.Right),
-                                           Math.Clamp(py, rect.Top, rect.Bottom));
+                    DrawSmoothed(g, data, ch, win, rect, xmin, xmax, ymin, ymax,
+                                 sm => MapXy(xs, sm, n, xmin, xmax, ymin, ymax, rect));
                 }
-                g.DrawLines(pen, points);
+                else
+                {
+                    var points = MapXy(xs, data, n, xmin, xmax, ymin, ymax, rect);
+                    g.DrawLines(pen, points);
+                }
             }
         }
 
-        DrawRuler(g, rect, ctx, ys, xs, xmin, xmax, ymin, ymax);
+        if (!ctx.ForExport)
+        {
+            DrawMarkers(g, rect, ys, xs, xmin, xmax, ymin, ymax);
+            DrawRuler(g, rect, ctx, ys, xs, xmin, xmax, ymin, ymax);
+        }
+    }
+
+    // Отображение индексов k0..k1 на область графика (ось времени)
+    private static PointF[] MapTime(double[] data, int k0, int k1,
+                                    double xmin, double xmax, double ymin, double ymax, Rectangle rect)
+    {
+        var points = new PointF[k1 - k0 + 1];
+        for (int k = k0; k <= k1; k++)
+        {
+            float px = rect.Left + (float)(rect.Width * (k - xmin) / (xmax - xmin));
+            float py = rect.Bottom - (float)(rect.Height * (data[k] - ymin) / (ymax - ymin));
+            points[k - k0] = new PointF(px, Math.Clamp(py, rect.Top, rect.Bottom));
+        }
+        return points;
+    }
+
+    // Отображение пар (x, y) на область графика (XY-режим)
+    private static PointF[] MapXy(double[] xs, double[] data, int n,
+                                  double xmin, double xmax, double ymin, double ymax, Rectangle rect)
+    {
+        var points = new PointF[n];
+        for (int i = 0; i < n; i++)
+        {
+            float px = rect.Left + (float)(rect.Width * (xs[i] - xmin) / (xmax - xmin));
+            float py = rect.Bottom - (float)(rect.Height * (data[i] - ymin) / (ymax - ymin));
+            points[i] = new PointF(Math.Clamp(px, rect.Left, rect.Right),
+                                   Math.Clamp(py, rect.Top, rect.Bottom));
+        }
+        return points;
+    }
+
+    // Слой сглаживания поверх исходной линии: полупрозрачная утолщённая линия
+    // Эффективное сглаживание канала: своё, иначе глобальное из меню
+    // «Инструменты». win — эффективное окно.
+    private static bool EffectiveSmooth(Channel ch, out int win)
+    {
+        var kind = ch.Smooth != SmoothKind.None ? ch.Smooth : PlotSettings.GlobalSmooth;
+        win = ch.Smooth != SmoothKind.None ? ch.SmoothWindow : PlotSettings.GlobalSmoothWindow;
+        return kind != SmoothKind.None;
+    }
+
+    private static void DrawSmoothed(IGraphics g, double[] data, Channel ch, int win, Rectangle rect,
+                                     double xmin, double xmax, double ymin, double ymax,
+                                     Func<double[], PointF[]> map)
+    {
+        var kind = ch.Smooth != SmoothKind.None ? ch.Smooth : PlotSettings.GlobalSmooth;
+        int w = Math.Clamp(win | 1, 3, 501);
+        double[] sm = kind == SmoothKind.Median && w <= 31
+            ? PlotUtil.MedianFilter(data, w)
+            : PlotUtil.MovingAverage(data, Math.Clamp(w, 3, 1001));
+        int k0 = Math.Max(0, (int)Math.Ceiling(xmin));
+        int k1 = Math.Min(sm.Length - 1, (int)Math.Floor(xmax));
+        if (k1 < k0) return;
+        using var pen = new Pen(Color.FromArgb(170, ch.Color), ch.LineWidth + 2f)
+            { LineJoin = LineJoin.Round };
+        g.DrawLines(pen, map(sm));
+    }
+
+    // Маркеры измерений: вертикальные линии A и B; между ними — Δt и ΔV
+    // по каждому видимому каналу (значения в ближайших к маркерам точках).
+    private static void DrawMarkers(IGraphics g, Rectangle rect, List<Channel> ys,
+                                    double[]? xs, double xmin, double xmax, double ymin, double ymax)
+    {
+        var a = PlotSettings.MarkerA;
+        var b = PlotSettings.MarkerB;
+        if (a == null && b == null) return;
+
+        using var font = new Font("Segoe UI", 9f);
+        using var penA = new Pen(Theme.Accent) { DashStyle = DashStyle.Dash };
+        using var penB = new Pen(Color.FromArgb(230, 120, 60)) { DashStyle = DashStyle.Dash };
+
+        DrawOne(a, penA, "A");
+        DrawOne(b, penB, "B");
+
+        void DrawOne(double? mx, Pen pen, string tag)
+        {
+            if (mx is not { } v || v < xmin || v > xmax) return;
+            int px = rect.Left + (int)(rect.Width * (v - xmin) / (xmax - xmin));
+            g.DrawLine(pen, px, rect.Top, px, rect.Bottom);
+            using var bsh = new SolidBrush(Theme.PlotBg);
+            g.FillRectangle(bsh, px + 3, rect.Top + 2, 14, 15);
+            using var br = new SolidBrush(pen.Color);
+            g.DrawString(tag, font, br, px + 4, rect.Top + 2);
+        }
+
+        if (a is not { } va || b is not { } vb) return;
+        double dt = Math.Abs(vb - va);
+        string dtText = xs == null
+            ? $"Δt = {dt:0.##} точ. ({dt / Math.Max(PlotSettings.SampleRate, 1e-6) * 1000:0.###} мс)"
+            : $"ΔX = {dt:0.###}";
+
+        // Значения каналов у маркеров и их разности
+        var lines = new List<string> { dtText };
+        var brushes = new List<Brush> { new SolidBrush(Theme.Text) };
+        foreach (var ch in ys)
+        {
+            var data = ch.Data.ToArray();
+            if (data.Length == 0) continue;
+            double? vaCh = ValueAt(ch, data, xs, va);
+            double? vbCh = ValueAt(ch, data, xs, vb);
+            if (vaCh == null || vbCh == null) continue;
+            lines.Add($"Δ{ch.Name} = {Math.Abs(vbCh.Value - vaCh.Value):0.###}");
+            brushes.Add(new SolidBrush(ch.Color));
+        }
+
+        float boxW = 10 + lines.Max(t => PlotUtil.Measure(g, t, font).Width);
+        float boxH = 6 + lines.Count * 16;
+        float bx = rect.Right - boxW - 8, by = rect.Top + 6;
+        using (var back = new SolidBrush(Theme.PlotBg))
+            g.FillRectangle(back, bx, by, boxW, boxH);
+        using var frame = new Pen(Theme.Accent);
+        g.DrawRectangle(frame, bx, by, boxW, boxH);
+        for (int i = 0; i < lines.Count; i++)
+            g.DrawString(lines[i], font, brushes[i], bx + 5, by + 3 + i * 16);
+        foreach (var br in brushes) br.Dispose();
+    }
+
+    // Значение канала в точке оси X: время — ближайший индекс; XY — ближайшая пара
+    private static double? ValueAt(Channel ch, double[] data, double[]? xs, double x)
+    {
+        if (xs == null)
+        {
+            int i = (int)Math.Clamp(Math.Round(x), 0, data.Length - 1);
+            return data[i];
+        }
+        int n = Math.Min(xs.Length, data.Length);
+        int best = 0;
+        double dist = double.MaxValue;
+        for (int i = 0; i < n; i++)
+        {
+            double d = Math.Abs(xs[i] - x);
+            if (d < dist) { dist = d; best = i; }
+        }
+        return data[best];
     }
 
     // Линейка под курсором: вертикальная линия — время/значение оси X,
@@ -171,7 +344,7 @@ public static class TimePlot
         g.DrawString(xLabel, font, yBrush, ctx.MouseX + 4, rect.Bottom + 4);
 
         // Значения каналов в точке курсора (ищем ближайший индекс)
-        int rowY = rect.Top + 6;
+        int rowY = rect.Top + 24;
         foreach (var ch in ys)
         {
             var data = ch.Data.ToArray();
@@ -180,11 +353,7 @@ public static class TimePlot
             double v;
             if (xs == null)
             {
-                int window = (int)xmax + 1;
-                int n = Math.Min(window, data.Length);
-                int skip = data.Length - n;
-                int i = skip + (int)Math.Clamp((int)Math.Round(
-                    (ctx.MouseX - rect.Left) * (window - 1.0) / rect.Width), 0, n - 1);
+                int i = (int)Math.Clamp((int)Math.Round(xval), 0, data.Length - 1);
                 v = data[i];
             }
             else

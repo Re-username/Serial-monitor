@@ -5,14 +5,21 @@ namespace SerialPlotter;
 public sealed class ChannelsPanel : Panel
 {
     private readonly Label _header;
-    private readonly Button _rangeBtn;
     private readonly Label _xLabel;
     private readonly ComboBox _xBox;
     private readonly ToolTip _tip = new();
+    private readonly System.Windows.Forms.Timer _rebuildTimer = new() { Interval = 150 };
     private bool _updating;
 
     // Индекс канала на оси X в DataHub.Channels; -1 — ось X это время.
     public int XIndex { get; private set; } = -1;
+
+    // Восстановление выбора оси X (настройки); индекс вне диапазона сбросится в «Время»
+    public void SetXIndex(int idx)
+    {
+        XIndex = idx;
+        RebuildNow();
+    }
 
     public ChannelsPanel()
     {
@@ -38,23 +45,26 @@ public sealed class ChannelsPanel : Panel
             RebuildRows();
         };
 
-        _rangeBtn = new Button { Text = "Диапазоны…", Left = 140, Top = 6, Width = 102, Height = 24 };
-        _rangeBtn.Click += (_, _) =>
-        {
-            using var dlg = new RangeForm();
-            dlg.ShowDialog(FindForm());
-        };
-
         Controls.Add(_header);
         Controls.Add(_xLabel);
         Controls.Add(_xBox);
-        Controls.Add(_rangeBtn);
 
-        DataHub.ChannelsChanged += Rebuild;
-        Rebuild();
+        // Перестроение дебаунсится: при плохом бодрейте заголовки-«мусор» могут
+        // идти на каждую строку, а пересоздавать контролы на каждую — нельзя
+        _rebuildTimer.Tick += (_, _) =>
+        {
+            _rebuildTimer.Stop();
+            RebuildNow();
+        };
+        DataHub.ChannelsChanged += () =>
+        {
+            _rebuildTimer.Stop();
+            _rebuildTimer.Start();
+        };
+        RebuildNow();
     }
 
-    private void Rebuild()
+    private void RebuildNow()
     {
         if (XIndex >= DataHub.Channels.Count)
             XIndex = -1;
@@ -76,7 +86,7 @@ public sealed class ChannelsPanel : Panel
         for (int i = Controls.Count - 1; i >= 0; i--)
         {
             Control c = Controls[i];
-            if (!ReferenceEquals(c, _header) && !ReferenceEquals(c, _rangeBtn) &&
+            if (!ReferenceEquals(c, _header) &&
                 !ReferenceEquals(c, _xLabel) && !ReferenceEquals(c, _xBox))
             {
                 Controls.RemoveAt(i);
@@ -154,7 +164,7 @@ internal sealed class ChannelEditForm : Form
     public ChannelEditForm(Channel ch)
     {
         Text = $"Канал: {ch.Name}";
-        ClientSize = new Size(280, 252);
+        ClientSize = new Size(280, 344);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -198,19 +208,40 @@ internal sealed class ChannelEditForm : Form
         styleBox.Items.AddRange(new object[] { "Сплошная", "Штриховая", "Пунктир", "Штрих-пунктир" });
         styleBox.SelectedIndex = (int)ch.LineStyle;
 
-        var okBtn = new Button { Text = "OK", Left = 102, Top = 208, Width = 80, DialogResult = DialogResult.OK };
-        var cancelBtn = new Button { Text = "Отмена", Left = 190, Top = 208, Width = 80, DialogResult = DialogResult.Cancel };
+        // Сглаживание: рисуется отдельным слоем поверх исходной линии
+        var smoothLabel = new Label { Text = "Сглаживание:", Left = 12, Top = 188, Width = 120 };
+        var smoothBox = new ComboBox
+        {
+            Left = 12, Top = 206, Width = 150,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+        };
+        smoothBox.Items.AddRange(new object[] { "Нет", "Скользящее среднее", "Медиана" });
+        smoothBox.SelectedIndex = (int)ch.Smooth;
+
+        var smoothWinLabel = new Label { Text = "Окно, точек:", Left = 172, Top = 188, Width = 100 };
+        var smoothWinNum = new NumericUpDown
+        {
+            Left = 172, Top = 206, Width = 96,
+            Minimum = 3, Maximum = 501, Increment = 2,
+            Value = Math.Clamp(ch.SmoothWindow | 1, 3, 501),
+        };
+
+        var okBtn = new Button { Text = "OK", Left = 102, Top = 300, Width = 80, DialogResult = DialogResult.OK };
+        var cancelBtn = new Button { Text = "Отмена", Left = 190, Top = 300, Width = 80, DialogResult = DialogResult.Cancel };
         okBtn.Click += (_, _) =>
         {
             if (nameBox.Text.Trim().Length > 0) ch.Name = nameBox.Text.Trim();
             ch.Color = colorBtn.BackColor;
             ch.LineWidth = (float)widthNum.Value;
             ch.LineStyle = (LineKind)styleBox.SelectedIndex;
+            ch.Smooth = (SmoothKind)smoothBox.SelectedIndex;
+            ch.SmoothWindow = (int)smoothWinNum.Value | 1;
         };
 
         Controls.AddRange(new Control[]
             { colorLabel, colorBtn, nameLabel, nameBox,
-              widthLabel, widthNum, styleLabel, styleBox, okBtn, cancelBtn });
+              widthLabel, widthNum, styleLabel, styleBox,
+              smoothLabel, smoothBox, smoothWinLabel, smoothWinNum, okBtn, cancelBtn });
 
         AcceptButton = okBtn;
         CancelButton = cancelBtn;
