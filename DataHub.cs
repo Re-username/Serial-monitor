@@ -56,7 +56,9 @@ public static class DataHub
     // (пользователь переименовал канал) — просим интерфейс перестроиться.
     public static void NotifyChannelsChanged() => ChannelsChanged?.Invoke();
 
-    public static void PushLine(string line)
+    // Канал приёмника: порт пишет с начала, симулятор — после портовых
+    // каналов, чтобы источники работали одновременно, не затирая друг друга
+    public static void PushLine(string line, int channelOffset = 0)
     {
         RawLine?.Invoke(line);
 
@@ -64,18 +66,19 @@ public static class DataHub
             return; // запись на паузе — данные только в консоль
 
         line = line.Trim();
-        if (line.Length == 0 || !line.Contains(','))
-            return; // мусор без запятых пропускаем
+        if (line.Length == 0)
+            return;
 
-        var parts = line.Split(',');
+        // Одиночное число без запятых — один канал (одноканальный симулятор)
+        var parts = line.Contains(',') ? line.Split(',') : new[] { line };
         if (TryParseValues(parts, out var values))
         {
-            if (EnsureChannels(values.Length))
+            if (EnsureChannels(channelOffset + values.Length))
                 ChannelsChanged?.Invoke();
 
             for (int i = 0; i < values.Length; i++)
             {
-                var ch = Channels[i];
+                var ch = Channels[channelOffset + i];
                 ch.Data.Enqueue(values[i]);
                 while (ch.Data.Count > HISTORY)
                     ch.Data.Dequeue();
@@ -91,11 +94,11 @@ public static class DataHub
         else if (parts.All(p => !double.TryParse(p.Trim(), NumberStyles.Float,
                                                  CultureInfo.InvariantCulture, out _)))
         {
-            bool changed = EnsureChannels(parts.Length);
-            for (int i = 0; i < parts.Length && i < Channels.Count; i++)
+            bool changed = EnsureChannels(channelOffset + parts.Length);
+            for (int i = 0; i < parts.Length && channelOffset + i < Channels.Count; i++)
             {
                 string name = CleanName(parts[i]);
-                if (Channels[i].Name != name) { Channels[i].Name = name; changed = true; }
+                if (Channels[channelOffset + i].Name != name) { Channels[channelOffset + i].Name = name; changed = true; }
             }
             if (changed) ChannelsChanged?.Invoke();
         }

@@ -177,8 +177,9 @@ The **«Simulator»** button opens the virtual channel window — test the plots
 without hardware. Each channel has a name, waveform (sine, square, sawtooth,
 noise, constant, random walk), frequency, amplitude and offset. **«Start»** —
 data flows into the same pipeline as from the COM port (50 lines/s): visible
-both on the plot and in the console. A running simulator blocks port
-connection — only one source is active at a time.
+both on the plot and in the console. The simulator runs **together with a
+connected port**: virtual channels are drawn after the port's channels (or
+vice versa), and neither source overwrites the other's data.
 
 > If you need output to a **real virtual COM port** (so any third-party
 > program can see the data), install the [com0com](https://com0com.sourceforge.net/)

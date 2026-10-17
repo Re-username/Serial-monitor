@@ -31,6 +31,11 @@ internal sealed class MainForm : Form
     private Rectangle _selRect;
     private bool _pendingViewReset; // сбросить зум после экспорта
 
+    // Совместная работа источников: порт пишет каналы с начала, симулятор —
+    // после портовых (и наоборот), чтобы данные не затирали друг друга
+    private int _portChannelOffset, _simChannelOffset;
+    private int _portCount, _simCount;
+
     private readonly PlotPanel _plot = new() { Dock = DockStyle.Fill };
     private readonly ChannelsPanel _channels = new();
     private readonly ConsolePanel _console = new();
@@ -191,7 +196,15 @@ internal sealed class MainForm : Form
         };
         drawTimer.Start();
 
-        _serial.LineReceived += DataHub.PushLine;
+        // Источники пишут в разные диапазоны каналов и не затирают друг
+        // друга. Смещение каждого — конец диапазона другого; счётчики
+        // каналов обновляются по каждой принятой строке.
+        _serial.LineReceived += line =>
+        {
+            DataHub.PushLine(line, _portChannelOffset);
+            // каналы мог создать и заголовок — считаем по факту после записи
+            _portCount = Math.Max(_portCount, DataHub.Channels.Count - _portChannelOffset);
+        };
         _serial.Closed += OnSerialClosed;
         _serial.Failed += msg =>
         {
@@ -209,7 +222,11 @@ internal sealed class MainForm : Form
             return true;
         };
 
-        _sim.LineGenerated += DataHub.PushLine;
+        _sim.LineGenerated += line =>
+        {
+            DataHub.PushLine(line, _simChannelOffset);
+            _simCount = Math.Max(_simCount, DataHub.Channels.Count - _simChannelOffset);
+        };
         _sim.Started += OnSimStarted;
         _sim.Stopped += OnSimStopped;
 
@@ -511,6 +528,8 @@ internal sealed class MainForm : Form
         _serial.DiscardBuffers();
         DataHub.Reset();
         PlotSettings.ResetView();
+        _portChannelOffset = _simChannelOffset = 0;
+        _portCount = _simCount = 0;
         _console.Clear();
         _status = Lang.T("сброс: буферы порта, графики и вывод очищены", "reset: port buffers, plots and output cleared");
         UpdateTitle();
@@ -581,8 +600,13 @@ internal sealed class MainForm : Form
             return;
         }
 
-        DataHub.Reset(); // старые каналы от прошлого источника не нужны
-        _status = $"{_port} @ {baud}";
+        // Порт и симулятор работают независимо: порт пишет каналы с начала,
+        // симулятор — после портовых (и наоборот, кто позже стартовал)
+        if (!_sim.Running && DataHub.Channels.Count > 0)
+            DataHub.Reset(); // без симулятора — старые каналы от прошлого источника не нужны
+        _portChannelOffset = _sim.Running ? _simChannelOffset + _simCount : 0;
+        _portCount = 0; // уточнится по первой строке с данными
+        _status = $"{_port} @ {baud}" + (_sim.Running ? $" + {Lang.T("симулятор", "simulator")}" : "");
         _connectBtn.Text = Lang.T("Отключить", "Disconnect");
         _console.SetSendEnabled(true);
         SaveSettings();
@@ -610,23 +634,59 @@ internal sealed class MainForm : Form
 
     private void OnSimStarted()
     {
+        // Повторный запуск: переиспользуем уже созданные каналы симулятора
+        // (начинаем с чистого листа, как реальный источник), а не плодим копии
+        if (_simCount > 0 && _simChannelOffset + _simCount <= DataHub.Channels.Count)
+        {
+            for (int i = 0; i < _simCount; i++)
+                DataHub.Channels[_simChannelOffset + i].Data.Clear();
+            // лишние каналы за пределами нового набора симулятора убираем
+            for (int i = DataHub.Channels.Count - 1; i >= _simChannelOffset + _sim.Channels.Count; i--)
+                DataHub.Channels.RemoveAt(i);
+            DataHub.NotifyChannelsChanged();
+        }
+        else
+        {
+            if (!_serial.IsOpen && DataHub.Channels.Count > 0)
+            {
+                DataHub.Reset(); // без порта — старые каналы не смешиваем
+                _portChannelOffset = _portCount = 0;
+            }
+            // Симулятор пишет каналы после портовых (или с начала, если порт
+            // закрыт). max(portCount, фактические каналы) — на случай, если
+            // порт открыт, но ещё не прислал ни одной строки
+            _simChannelOffset = _serial.IsOpen
+                ? _portChannelOffset + Math.Max(_portCount, DataHub.Channels.Count - _portChannelOffset)
+                : 0;
+        }
+        _simCount = _sim.Channels.Count;
+
+        // Совместно с портом: догенерируем сигнал симулятора задним числом,
+        // чтобы он начинался с того же момента, что и сигнал порта
         if (_serial.IsOpen)
-            _serial.Close();
-        _connectBtn.Text = Lang.T("Подключить", "Connect");
-        _connectBtn.Enabled = false; // один активный источник: либо порт, либо симулятор
-        _console.SetSendEnabled(false);
-        DataHub.Reset();             // старые каналы не смешиваем с виртуальными
-        _status = $"{Lang.T("симулятор", "simulator")}: {_sim.Channels.Count} {Lang.T("канал(ов)", "channel(s)")}";
+        {
+            int portPoints = _portChannelOffset < DataHub.Channels.Count
+                ? DataHub.Channels.Skip(_portChannelOffset).Max(c => c.Data.Count)
+                : 0;
+            if (portPoints > 1)
+                _sim.GenerateHistory(portPoints);
+        }
+
+        _status = (_serial.IsOpen ? $"{_port} @ {_baud} + " : "") +
+                  $"{Lang.T("симулятор", "simulator")}: {_sim.Channels.Count} {Lang.T("канал(ов)", "channel(s)")}";
+        _console.SetSendEnabled(_serial.IsOpen);
         UpdateTitle();
     }
 
     private void OnSimStopped()
     {
-        _connectBtn.Enabled = true;
-        if (!_serial.IsOpen)
+        if (_serial.IsOpen)
+            _status = $"{_port} @ {_baud}";
+        else
+        {
             _console.SetSendEnabled(false);
-        if (!_serial.IsOpen)
             _status = Lang.T("не подключено", "not connected");
+        }
         UpdateTitle();
     }
 
