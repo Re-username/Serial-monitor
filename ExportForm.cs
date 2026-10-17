@@ -17,19 +17,19 @@ public sealed class ExportForm : Form
 
     public ExportForm(bool yEnabled, double xMin, double xMax, double yMin, double yMax)
     {
-        Text = "Что экспортировать";
+        Text = Lang.T("Что экспортировать", "What to export");
         ClientSize = new Size(300, yEnabled ? 232 : 172);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
 
-        _xCheck = new CheckBox { Text = "Отрезок по оси X (с .. по ..)", Left = 12, Top = 12, Width = 270 };
+        _xCheck = new CheckBox { Text = Lang.T("Отрезок по оси X (с .. по ..)", "X-axis segment (from .. to ..)"), Left = 12, Top = 12, Width = 270 };
         _xFrom = MakeNum(12, 38, xMin);
         _xTo = MakeNum(158, 38, xMax);
 
-        var yGroup = new GroupBox { Text = "Диапазон по Y (только ось X — время)", Left = 8, Top = 74, Width = 284, Height = 86 };
-        _yCheck = new CheckBox { Text = "Обрезать по Y", Left = 12, Top = 22, Width = 260, Enabled = yEnabled };
+        var yGroup = new GroupBox { Text = Lang.T("Диапазон по Y (только ось X — время)", "Y range (only when axis X is time)"), Left = 8, Top = 74, Width = 284, Height = 86 };
+        _yCheck = new CheckBox { Text = Lang.T("Обрезать по Y", "Crop by Y"), Left = 12, Top = 22, Width = 260, Enabled = yEnabled };
         _yFrom = MakeNum(12, 48, yMin);
         _yTo = MakeNum(158, 48, yMax);
         yGroup.Controls.Add(_yCheck);
@@ -37,7 +37,7 @@ public sealed class ExportForm : Form
         yGroup.Controls.Add(_yTo);
 
         var okBtn = new Button { Text = "OK", Left = 118, Top = ClientSize.Height - 40, Width = 80, DialogResult = DialogResult.OK };
-        var cancelBtn = new Button { Text = "Отмена", Left = 206, Top = ClientSize.Height - 40, Width = 80, DialogResult = DialogResult.Cancel };
+        var cancelBtn = new Button { Text = Lang.T("Отмена", "Cancel"), Left = 206, Top = ClientSize.Height - 40, Width = 80, DialogResult = DialogResult.Cancel };
 
         void Sync()
         {

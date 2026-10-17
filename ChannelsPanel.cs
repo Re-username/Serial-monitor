@@ -21,6 +21,15 @@ public sealed class ChannelsPanel : Panel
         RebuildNow();
     }
 
+    // Перевод видимых строк (вызывается при смене языка)
+    public void ApplyLanguage()
+    {
+        _header.Text = Lang.T("Каналы", "Channels");
+        _xLabel.Text = Lang.T("Ось X:", "X axis:");
+        if (_xBox.Items.Count > 0) _xBox.Items[0] = Lang.T("Время", "Time");
+        RebuildNow();
+    }
+
     public ChannelsPanel()
     {
         Dock = DockStyle.Right;
@@ -99,7 +108,8 @@ public sealed class ChannelsPanel : Panel
         {
             Controls.Add(new Label
             {
-                Text = "Нет данных — подключись к порту\r\nили запусти симулятор",
+                Text = Lang.T("Нет данных — подключись к порту\r\nили запусти симулятор",
+                              "No data — connect to a port\r\nor start the simulator"),
                 Left = 8, Top = y, Width = 220, Height = 40,
                 ForeColor = Theme.Text,
             });
@@ -133,7 +143,7 @@ public sealed class ChannelsPanel : Panel
                 Left = 40, Top = y + 4, Width = 170, Height = 22,
                 Checked = ch.Visible || isX,
                 Enabled = !isX,
-                Text = isX ? $"{ch.Name}  — ось X" : ch.Name,
+                Text = isX ? $"{ch.Name}  — {Lang.T("ось X", "X axis")}" : ch.Name,
                 ForeColor = Theme.Text,
             };
             check.CheckedChanged += (_, _) => ch.Visible = check.Checked;
@@ -142,7 +152,8 @@ public sealed class ChannelsPanel : Panel
             {
                 Text = "…", Left = 214, Top = y + 2, Width = 26, Height = 24,
             };
-            _tip.SetToolTip(editBtn, "Настройки канала: имя, цвет, толщина и тип линии");
+            _tip.SetToolTip(editBtn, Lang.T("Настройки канала: имя, цвет, толщина, тип линии, сглаживание",
+                                        "Channel settings: name, color, width, line style, smoothing"));
             editBtn.Click += (_, _) =>
             {
                 using var dlg = new ChannelEditForm(ch);
@@ -163,18 +174,18 @@ internal sealed class ChannelEditForm : Form
 {
     public ChannelEditForm(Channel ch)
     {
-        Text = $"Канал: {ch.Name}";
+        Text = $"{Lang.T("Канал", "Channel")}: {ch.Name}";
         ClientSize = new Size(280, 344);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
 
-        var colorLabel = new Label { Text = "Цвет линии:", Left = 12, Top = 14, Width = 120 };
+        var colorLabel = new Label { Text = Lang.T("Цвет линии:", "Line color:"), Left = 12, Top = 14, Width = 120 };
         var colorBtn = new Button
         {
             Left = 12, Top = 34, Width = 120, Height = 30,
-            BackColor = ch.Color, Text = "Изменить…", FlatStyle = FlatStyle.Flat,
+            BackColor = ch.Color, Text = Lang.T("Изменить…", "Change…"), FlatStyle = FlatStyle.Flat,
             Tag = ch, // чтобы тема не перекрасила кнопку-образец
         };
         FixTextColor(colorBtn);
@@ -188,10 +199,10 @@ internal sealed class ChannelEditForm : Form
             }
         };
 
-        var nameLabel = new Label { Text = "Имя:", Left = 12, Top = 78, Width = 120 };
+        var nameLabel = new Label { Text = Lang.T("Имя:", "Name:"), Left = 12, Top = 78, Width = 120 };
         var nameBox = new TextBox { Left = 12, Top = 98, Width = 256, Text = ch.Name };
 
-        var widthLabel = new Label { Text = "Толщина линии:", Left = 12, Top = 134, Width = 120 };
+        var widthLabel = new Label { Text = Lang.T("Толщина линии:", "Line width:"), Left = 12, Top = 134, Width = 120 };
         var widthNum = new NumericUpDown
         {
             Left = 12, Top = 154, Width = 120,
@@ -199,26 +210,35 @@ internal sealed class ChannelEditForm : Form
             Value = (decimal)Math.Clamp(ch.LineWidth, 1, 10),
         };
 
-        var styleLabel = new Label { Text = "Тип линии:", Left = 148, Top = 134, Width = 120 };
+        var styleLabel = new Label { Text = Lang.T("Тип линии:", "Line style:"), Left = 148, Top = 134, Width = 120 };
         var styleBox = new ComboBox
         {
             Left = 148, Top = 152, Width = 120,
             DropDownStyle = ComboBoxStyle.DropDownList,
         };
-        styleBox.Items.AddRange(new object[] { "Сплошная", "Штриховая", "Пунктир", "Штрих-пунктир" });
+        styleBox.Items.AddRange(new object[]
+        {
+            Lang.T("Сплошная", "Solid"), Lang.T("Штриховая", "Dash"),
+            Lang.T("Пунктир", "Dot"), Lang.T("Штрих-пунктир", "Dash-dot"),
+        });
         styleBox.SelectedIndex = (int)ch.LineStyle;
 
         // Сглаживание: рисуется отдельным слоем поверх исходной линии
-        var smoothLabel = new Label { Text = "Сглаживание:", Left = 12, Top = 188, Width = 120 };
+        var smoothLabel = new Label { Text = Lang.T("Сглаживание:", "Smoothing:"), Left = 12, Top = 188, Width = 120 };
         var smoothBox = new ComboBox
         {
             Left = 12, Top = 206, Width = 150,
             DropDownStyle = ComboBoxStyle.DropDownList,
         };
-        smoothBox.Items.AddRange(new object[] { "Нет", "Скользящее среднее", "Медиана" });
+        smoothBox.Items.AddRange(new object[]
+        {
+            Lang.T("Нет", "None"), Lang.T("Скользящее среднее", "Moving average"),
+            Lang.T("Медиана", "Median"), Lang.T("Гауссово", "Gaussian"),
+            Lang.T("Экспоненциальное", "Exponential"),
+        });
         smoothBox.SelectedIndex = (int)ch.Smooth;
 
-        var smoothWinLabel = new Label { Text = "Окно, точек:", Left = 172, Top = 188, Width = 100 };
+        var smoothWinLabel = new Label { Text = Lang.T("Окно, точек:", "Window, points:"), Left = 172, Top = 188, Width = 100 };
         var smoothWinNum = new NumericUpDown
         {
             Left = 172, Top = 206, Width = 96,
@@ -227,7 +247,7 @@ internal sealed class ChannelEditForm : Form
         };
 
         var okBtn = new Button { Text = "OK", Left = 102, Top = 300, Width = 80, DialogResult = DialogResult.OK };
-        var cancelBtn = new Button { Text = "Отмена", Left = 190, Top = 300, Width = 80, DialogResult = DialogResult.Cancel };
+        var cancelBtn = new Button { Text = Lang.T("Отмена", "Cancel"), Left = 190, Top = 300, Width = 80, DialogResult = DialogResult.Cancel };
         okBtn.Click += (_, _) =>
         {
             if (nameBox.Text.Trim().Length > 0) ch.Name = nameBox.Text.Trim();

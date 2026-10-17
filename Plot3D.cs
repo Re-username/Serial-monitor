@@ -39,8 +39,8 @@ public static class Plot3D
         if (vis.Count < need)
         {
             PlotUtil.Hint(g, rect, tAxis > 0
-                ? "Для 3D с осью времени нужно минимум 2 видимых канала"
-                : "Для 3D нужно минимум 3 видимых канала (X, Y, Z)");
+                ? Lang.T("Для 3D с осью времени нужно минимум 2 видимых канала", "3D with a time axis needs at least 2 visible channels")
+                : Lang.T("Для 3D нужно минимум 3 видимых канала (X, Y, Z)", "3D needs at least 3 visible channels (X, Y, Z)"));
             return;
         }
 
@@ -147,7 +147,7 @@ public static class Plot3D
         }
 
         using var hintFont = new Font("Segoe UI", 9f);
-        g.DrawString("Перетаскивай мышью, чтобы вращать", hintFont, textBrush,
+        g.DrawString(Lang.T("Перетаскивай мышью, чтобы вращать", "Drag with the mouse to rotate"), hintFont, textBrush,
                      rect.Right - 230, rect.Bottom - 20);
     }
 }

@@ -13,6 +13,9 @@ public sealed class ConsolePanel : Panel
     private readonly TextBox _inLog;
     private readonly TextBox _outLog;
     private readonly Button _pauseBtn;
+    private readonly Button _clearBtn;
+    private readonly Label _headerLabel;
+    private readonly TabControl _tabs;
     private readonly TextBox _sendBox;
     private readonly Button _sendBtn;
     private readonly Queue<string> _queue = new();
@@ -29,26 +32,27 @@ public sealed class ConsolePanel : Panel
         _inLog = MakeLog();
         _outLog = MakeLog();
 
-        var tabs = new TabControl { Dock = DockStyle.Fill };
-        var inTab = new TabPage("Входящие") { BackColor = Theme.Bg };
+        _tabs = new TabControl { Dock = DockStyle.Fill };
+        var inTab = new TabPage(Lang.T("Входящие", "Incoming")) { BackColor = Theme.Bg };
         inTab.Controls.Add(_inLog);
-        var outTab = new TabPage("Исходящие") { BackColor = Theme.Bg };
+        var outTab = new TabPage(Lang.T("Исходящие", "Outgoing")) { BackColor = Theme.Bg };
         outTab.Controls.Add(_outLog);
-        tabs.TabPages.Add(inTab);
-        tabs.TabPages.Add(outTab);
+        _tabs.TabPages.Add(inTab);
+        _tabs.TabPages.Add(outTab);
 
         var header = new Panel { Dock = DockStyle.Top, Height = 32 };
-        header.Controls.Add(new Label { Text = "Данные порта:", Left = 8, Top = 8, Width = 110 });
+        _headerLabel = new Label { Left = 8, Top = 8, Width = 110 };
+        header.Controls.Add(_headerLabel);
 
-        _pauseBtn = new Button { Text = "Пауза", Left = 120, Top = 4, Width = 100, Height = 24 };
+        _pauseBtn = new Button { Left = 120, Top = 4, Width = 100, Height = 24 };
         _pauseBtn.Click += (_, _) =>
         {
             _paused = !_paused;
-            _pauseBtn.Text = _paused ? "Продолжить" : "Пауза";
+            _pauseBtn.Text = _paused ? Lang.T("Продолжить", "Resume") : Lang.T("Пауза", "Pause");
         };
 
-        var clearBtn = new Button { Text = "Очистить", Left = 228, Top = 4, Width = 90, Height = 24 };
-        clearBtn.Click += (_, _) => Clear();
+        _clearBtn = new Button { Left = 228, Top = 4, Width = 90, Height = 24 };
+        _clearBtn.Click += (_, _) => Clear();
 
         // Отправка данных в порт
         _sendBox = new TextBox { Left = 420, Top = 5, Width = 420 };
@@ -56,21 +60,34 @@ public sealed class ConsolePanel : Panel
         {
             if (e.KeyCode == Keys.Enter) { SendCurrent(); e.SuppressKeyPress = true; }
         };
-        _sendBtn = new Button { Text = "Отправить", Left = 846, Top = 4, Width = 90, Height = 24 };
+        _sendBtn = new Button { Left = 846, Top = 4, Width = 90, Height = 24 };
         _sendBtn.Click += (_, _) => SendCurrent();
         SetSendEnabled(false);
 
         header.Controls.Add(_pauseBtn);
-        header.Controls.Add(clearBtn);
+        header.Controls.Add(_clearBtn);
         header.Controls.Add(_sendBtn);
         header.Controls.Add(_sendBox);
 
-        Controls.Add(tabs);   // Fill — добавляем первым, докируется последним
+        Controls.Add(_tabs);   // Fill — добавляем первым, докируется последним
         Controls.Add(header); // Top
+
+        ApplyLanguage();
 
         var flushTimer = new System.Windows.Forms.Timer { Interval = 50 };
         flushTimer.Tick += (_, _) => Flush();
         flushTimer.Start();
+    }
+
+    // Перевод видимых строк (вызывается при смене языка)
+    public void ApplyLanguage()
+    {
+        _headerLabel.Text = Lang.T("Данные порта:", "Port data:");
+        _pauseBtn.Text = _paused ? Lang.T("Продолжить", "Resume") : Lang.T("Пауза", "Pause");
+        _clearBtn.Text = Lang.T("Очистить", "Clear");
+        _sendBtn.Text = Lang.T("Отправить", "Send");
+        _tabs.TabPages[0].Text = Lang.T("Входящие", "Incoming");
+        _tabs.TabPages[1].Text = Lang.T("Исходящие", "Outgoing");
     }
 
     private static TextBox MakeLog() => new()

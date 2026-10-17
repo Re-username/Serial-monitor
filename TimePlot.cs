@@ -36,7 +36,7 @@ public static class TimePlot
         {
             PlotSettings.LastXMin = 0; PlotSettings.LastXMax = 1;
             PlotSettings.LastYMin = 0; PlotSettings.LastYMax = 1;
-            PlotUtil.Hint(g, rect, "Нет видимых каналов — отметь их в панели справа");
+            PlotUtil.Hint(g, rect, Lang.T("Нет видимых каналов — отметь их в панели справа", "No visible channels — check them in the panel on the right"));
             return;
         }
 
@@ -53,7 +53,7 @@ public static class TimePlot
             xs = xc.Data.ToArray();
             if (xs.Length < 2)
             {
-                PlotUtil.Hint(g, rect, $"Нет данных по оси X ({xc.Name})");
+                PlotUtil.Hint(g, rect, $"{Lang.T("Нет данных по оси X", "No data on axis X")} ({xc.Name})");
                 return;
             }
             PlotUtil.Range(xs, out double dxmin, out double dxmax);
@@ -119,7 +119,7 @@ public static class TimePlot
             string maxLabel = xmax.ToString("0.##");
             g.DrawString(maxLabel, font, textBrush,
                          rect.Right - PlotUtil.Measure(g, maxLabel, font).Width, rect.Bottom + 4);
-            string nameLabel = $"ось X: {xc.Name}";
+            string nameLabel = $"{Lang.T("ось X", "axis X")}: {xc.Name}";
             g.DrawString(nameLabel, font, textBrush,
                          rect.Left + (rect.Width - PlotUtil.Measure(g, nameLabel, font).Width) / 2,
                          rect.Bottom + 4);
@@ -127,7 +127,7 @@ public static class TimePlot
         else
         {
             g.DrawString($"{(long)Math.Max(0, xmin)}", font, textBrush, rect.Left, rect.Bottom + 4);
-            string maxLabel = $"{(long)xmax + 1} точ.";
+            string maxLabel = $"{(long)xmax + 1} {Lang.T("точ.", "pts")}";
             g.DrawString(maxLabel, font, textBrush,
                          rect.Right - PlotUtil.Measure(g, maxLabel, font).Width, rect.Bottom + 4);
         }
@@ -228,9 +228,13 @@ public static class TimePlot
     {
         var kind = ch.Smooth != SmoothKind.None ? ch.Smooth : PlotSettings.GlobalSmooth;
         int w = Math.Clamp(win | 1, 3, 501);
-        double[] sm = kind == SmoothKind.Median && w <= 31
-            ? PlotUtil.MedianFilter(data, w)
-            : PlotUtil.MovingAverage(data, Math.Clamp(w, 3, 1001));
+        double[] sm = kind switch
+        {
+            SmoothKind.Median when w <= 31 => PlotUtil.MedianFilter(data, w),
+            SmoothKind.Gaussian => PlotUtil.GaussianFilter(data, w),
+            SmoothKind.Exponential => PlotUtil.ExponentialFilter(data, w),
+            _ => PlotUtil.MovingAverage(data, Math.Clamp(w, 3, 1001)),
+        };
         int k0 = Math.Max(0, (int)Math.Ceiling(xmin));
         int k1 = Math.Min(sm.Length - 1, (int)Math.Floor(xmax));
         if (k1 < k0) return;
@@ -269,7 +273,7 @@ public static class TimePlot
         if (a is not { } va || b is not { } vb) return;
         double dt = Math.Abs(vb - va);
         string dtText = xs == null
-            ? $"Δt = {dt:0.##} точ. ({dt / Math.Max(PlotSettings.SampleRate, 1e-6) * 1000:0.###} мс)"
+            ? $"Δt = {dt:0.##} {Lang.T("точ", "pts")} ({dt / Math.Max(PlotSettings.SampleRate, 1e-6) * 1000:0.###} {Lang.T("мс", "ms")})"
             : $"ΔX = {dt:0.###}";
 
         // Значения каналов у маркеров и их разности

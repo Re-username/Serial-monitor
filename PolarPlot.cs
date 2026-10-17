@@ -35,7 +35,7 @@ public static class PolarPlot
         var vis = ctx.Visible;
         if (vis.Count < 2)
         {
-            PlotUtil.Hint(g, rect, "Для полярного режима нужно минимум 2 видимых канала");
+            PlotUtil.Hint(g, rect, Lang.T("Для полярного режима нужно минимум 2 видимых канала", "Polar mode needs at least 2 visible channels"));
             return;
         }
 
@@ -52,17 +52,15 @@ public static class PolarPlot
         g.DrawString(rLabel, font, textBrush,
                      Math.Min(cx + R + 4, rect.Right - PlotUtil.Measure(g, rLabel, font).Width),
                      cy - 8);
-        g.DrawString($"Центр = ({cX:0.##}, {cY:0.##}),   R — отклонение от центра,   φ — от оси +{chX.Name}",
+        g.DrawString($"{Lang.T("Центр", "Center")} = ({cX:0.##}, {cY:0.##}),   {Lang.T("R — отклонение от центра,   φ — от оси +", "R — deviation from center,   φ — from axis +")}{chX.Name}",
                      font, textBrush, rect.Left + 8, rect.Bottom - 22);
 
         int n = Math.Min(chX.Data.Count, chY.Data.Count);
         if (n == 0) return;
 
-        // Хвост траектории жёстко ограничен: стоимость DrawLines растёт
-        // квадратично с числом самопересечений ломаной, и несколько тысяч
-        // точек на одном кадре дают ~90 мс — полярный режим лагал
-        const int MaxTrail = 400;
-        int skip = Math.Max(0, n - MaxTrail);
+        // Хвост траектории ограничен настройкой «Диапазоны»: стоимость DrawLines
+        // растёт с числом самопересечений ломаной, много тысяч точек лагают
+        int skip = Math.Max(0, n - Math.Clamp(PlotSettings.PolarTrail, 10, 10000));
 
         var xd = chX.Data.Skip(skip).ToArray();
         var yd = chY.Data.Skip(skip).ToArray();

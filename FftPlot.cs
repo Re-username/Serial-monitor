@@ -21,7 +21,7 @@ public static class FftPlot
         var ch = ctx.Visible.FirstOrDefault();
         if (ch == null)
         {
-            PlotUtil.Hint(g, rect, "Нет видимых каналов — спектр строится по первому видимому");
+            PlotUtil.Hint(g, rect, Lang.T("Нет видимых каналов — спектр строится по первому видимому", "No visible channels — the spectrum uses the first visible one"));
             return;
         }
 
@@ -31,7 +31,7 @@ public static class FftPlot
 
         if (n < 16)
         {
-            PlotUtil.Hint(g, rect, $"Спектр «{ch.Name}»: мало данных (нужно минимум 16 точек, есть {count})");
+            PlotUtil.Hint(g, rect, $"{Lang.T("Спектр", "Spectrum")} {ch.Name}: {Lang.T("мало данных (нужно минимум 16 точек, есть", "not enough data (need at least 16 points, have")} {count})");
             return;
         }
 
@@ -61,7 +61,7 @@ public static class FftPlot
             int gy = rect.Top + rect.Height * i / 4;
             g.DrawLine(gridPen, rect.Left, gy, rect.Right, gy);
             double v = ymax - (ymax - ymin) * i / 4;
-            string lbl = log ? $"{v:F0} дБ" : v.ToString("0.##");
+            string lbl = log ? $"{v:F0} {Lang.T("дБ", "dB")}" : v.ToString("0.##");
             g.DrawString(lbl, font, textBrush, rect.Left - 52, gy - 8);
         }
         for (int i = 0; i <= 8; i++)
@@ -71,7 +71,7 @@ public static class FftPlot
             if (i > 0)
             {
                 double hz = fs / 2 * i / 8;
-                string lbl = hz >= 1000 ? $"{hz / 1000:0.##} кГц" : $"{hz:0.#} Гц";
+                string lbl = hz >= 1000 ? $"{hz / 1000:0.##} {Lang.T("кГц", "kHz")}" : $"{hz:0.#} {Lang.T("Гц", "Hz")}";
                 var size = PlotUtil.Measure(g, lbl, font);
                 g.DrawString(lbl, font, textBrush, gx - size.Width / 2, rect.Bottom + 4);
             }
@@ -97,15 +97,15 @@ public static class FftPlot
         for (int k = 2; k < bins; k++)
             if (mag[k] > mag[peak]) peak = k;
         double peakHz = fs / 2.0 * peak / (bins - 1);
-        string peakDb = log ? $", {20 * Math.Log10(Math.Max(mag[peak], 1e-12)):F0} дБ" : "";
+        string peakDb = log ? $", {20 * Math.Log10(Math.Max(mag[peak], 1e-12)):F0} {Lang.T("дБ", "dB")}" : "";
         using var legendFont = new Font("Segoe UI", 10f, FontStyle.Bold);
         using var legendBrush = new SolidBrush(ch.Color);
-        g.DrawString($"{ch.Name}: пик {peakHz:0.##} Гц{peakDb}",
+        g.DrawString($"{ch.Name}: {Lang.T("пик", "peak")} {peakHz:0.##} {Lang.T("Гц", "Hz")}{peakDb}",
                      legendFont, legendBrush, rect.Left + 10, rect.Top + 8);
 
         using var hintFont = new Font("Segoe UI", 9f);
-        g.DrawString($"FFT {n} точек, Δf = {fs / n:0.###} Гц   " +
-                     (log ? "логарифмическая шкала" : "линейная шкала"),
+        g.DrawString($"FFT {n} {Lang.T("точек", "pts")}, Δf = {fs / n:0.###} {Lang.T("Гц", "Hz")}   " +
+                     (log ? Lang.T("логарифмическая шкала", "logarithmic scale") : Lang.T("линейная шкала", "linear scale")),
                      hintFont, textBrush, rect.Left + 10, rect.Top + 28);
 
         PlotSettings.LastXMin = 0;

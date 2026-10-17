@@ -126,7 +126,7 @@ public static class DataHub
         bool added = false;
         while (Channels.Count < count)
         {
-            var ch = new Channel($"Канал {Channels.Count + 1}",
+            var ch = new Channel(Lang.T("Канал", "Channel") + $" {Channels.Count + 1}",
                                  Theme.Palette[Channels.Count % Theme.Palette.Length]);
             if (SeedChannels != null && Channels.Count < SeedChannels.Count)
             {

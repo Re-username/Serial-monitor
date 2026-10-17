@@ -74,4 +74,55 @@ internal static class PlotUtil
         }
         return result;
     }
+
+    // Гауссово сглаживание: взвешенное среднее с ядром exp(-k²/2σ²)
+    public static double[] GaussianFilter(double[] data, int w)
+    {
+        w = Math.Clamp(w | 1, 3, 501);
+        int n = data.Length, half = w / 2;
+        double sigma = w / 6.0; // края ядра ~0 при |k|>3σ
+
+        var kernel = new double[w];
+        double sum = 0;
+        for (int k = -half; k <= half; k++)
+        {
+            double v = Math.Exp(-k * k / (2 * sigma * sigma));
+            kernel[k + half] = v;
+            sum += v;
+        }
+        for (int k = 0; k < w; k++) kernel[k] /= sum;
+
+        var result = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            double acc = 0, wsum = 0;
+            for (int k = -half; k <= half; k++)
+            {
+                int j = i + k;
+                if (j < 0 || j >= n) continue;
+                double kw = kernel[k + half];
+                acc += data[j] * kw;
+                wsum += kw;
+            }
+            result[i] = acc / wsum; // на краях — перенормировка
+        }
+        return result;
+    }
+
+    // Экспоненциальное сглаживание (EMA): alpha из окна, один проход
+    public static double[] ExponentialFilter(double[] data, int w)
+    {
+        double alpha = 2.0 / (Math.Clamp(w | 1, 3, 501) + 1);
+        int n = data.Length;
+        var result = new double[n];
+        if (n == 0) return result;
+        double acc = data[0];
+        result[0] = acc;
+        for (int i = 1; i < n; i++)
+        {
+            acc = alpha * data[i] + (1 - alpha) * acc;
+            result[i] = acc;
+        }
+        return result;
+    }
 }

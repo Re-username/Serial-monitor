@@ -29,6 +29,8 @@ public static class Settings
         public bool FftLog { get; set; } = true;
         public int GlobalSmooth { get; set; }
         public int GlobalSmoothWindow { get; set; } = 9;
+        public int Language { get; set; }        // 0 — русский, 1 — English
+        public int PolarTrail { get; set; } = 400; // хвост траектории в полярном режиме, точек
         public List<ChannelInfo> Channels { get; set; } = new();
     }
 

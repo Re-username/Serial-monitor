@@ -10,7 +10,7 @@ public sealed class SimulatorForm : Form
     public SimulatorForm(Simulator sim)
     {
         _sim = sim;
-        Text = "Симулятор данных";
+        Text = Lang.T("Симулятор данных", "Data simulator");
         ClientSize = new Size(620, 380);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         StartPosition = FormStartPosition.CenterParent;
@@ -28,31 +28,31 @@ public sealed class SimulatorForm : Form
         };
         grid.Columns.Add(new DataGridViewTextBoxColumn
         {
-            HeaderText = "Имя", DataPropertyName = nameof(VChannel.Name),
+            HeaderText = Lang.T("Имя", "Name"), DataPropertyName = nameof(VChannel.Name),
             AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
         });
         grid.Columns.Add(new DataGridViewComboBoxColumn
         {
-            HeaderText = "Форма", DataPropertyName = nameof(VChannel.Wave),
+            HeaderText = Lang.T("Форма", "Wave"), DataPropertyName = nameof(VChannel.Wave),
             DataSource = Enum.GetValues(typeof(WaveKind)), Width = 130,
         });
         grid.Columns.Add(new DataGridViewTextBoxColumn
-            { HeaderText = "Частота, Гц", DataPropertyName = nameof(VChannel.Freq), Width = 90 });
+            { HeaderText = Lang.T("Частота, Гц", "Frequency, Hz"), DataPropertyName = nameof(VChannel.Freq), Width = 90 });
         grid.Columns.Add(new DataGridViewTextBoxColumn
-            { HeaderText = "Амплитуда", DataPropertyName = nameof(VChannel.Amplitude), Width = 90 });
+            { HeaderText = Lang.T("Амплитуда", "Amplitude"), DataPropertyName = nameof(VChannel.Amplitude), Width = 90 });
         grid.Columns.Add(new DataGridViewTextBoxColumn
-            { HeaderText = "Смещение", DataPropertyName = nameof(VChannel.Offset), Width = 90 });
+            { HeaderText = Lang.T("Смещение", "Offset"), DataPropertyName = nameof(VChannel.Offset), Width = 90 });
         grid.BackgroundColor = Theme.PlotBg;
         grid.ForeColor = Theme.Text;
         grid.GridColor = Theme.Grid;
 
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = Theme.Bg };
 
-        var addBtn = new Button { Text = "Добавить", Left = 8, Top = 9, Width = 90 };
+        var addBtn = new Button { Text = Lang.T("Добавить", "Add"), Left = 8, Top = 9, Width = 90 };
         addBtn.Click += (_, _) =>
             _sim.Channels.Add(new VChannel { Name = $"CH{_sim.Channels.Count + 1}" });
 
-        var delBtn = new Button { Text = "Удалить", Left = 106, Top = 9, Width = 90 };
+        var delBtn = new Button { Text = Lang.T("Удалить", "Delete"), Left = 106, Top = 9, Width = 90 };
         delBtn.Click += (_, _) =>
         {
             if (_sim.Running) return; // нельзя удалять на ходу — сдвинутся колонки данных
@@ -60,10 +60,10 @@ public sealed class SimulatorForm : Form
                 _sim.Channels.RemoveAt(row.Index);
         };
 
-        _startBtn = new Button { Text = "Старт", Left = 240, Top = 9, Width = 110 };
+        _startBtn = new Button { Text = Lang.T("Старт", "Start"), Left = 240, Top = 9, Width = 110 };
         _startBtn.Click += (_, _) => ToggleStart();
 
-        var closeBtn = new Button { Text = "Закрыть", Left = 358, Top = 9, Width = 90 };
+        var closeBtn = new Button { Text = Lang.T("Закрыть", "Close"), Left = 358, Top = 9, Width = 90 };
         closeBtn.Click += (_, _) => Close();
 
         bottom.Controls.AddRange(new Control[] { addBtn, delBtn, _startBtn, closeBtn });
@@ -85,7 +85,7 @@ public sealed class SimulatorForm : Form
         }
     }
 
-    private void OnRunningChanged() => _startBtn.Text = _sim.Running ? "Остановить" : "Старт";
+    private void OnRunningChanged() => _startBtn.Text = _sim.Running ? Lang.T("Остановить", "Stop") : Lang.T("Старт", "Start");
 
     private void ToggleStart()
     {
@@ -100,7 +100,7 @@ public sealed class SimulatorForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Симулятор",
+            MessageBox.Show(this, ex.Message, Lang.T("Симулятор", "Simulator"),
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

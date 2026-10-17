@@ -12,10 +12,11 @@ internal sealed class MainForm : Form
 {
     private const int MODE_TIME = 0, MODE_POLAR = 1, MODE_3D = 2, MODE_FFT = 3;
     private static readonly int[] BAUDS = { 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600 };
-    private static readonly string[] MODE_NAMES = { "график по времени", "полярный режим", "3D-режим", "FFT-спектр" };
+    private static readonly string[] MODE_NAMES_RU = { "график по времени", "полярный режим", "3D-режим", "FFT-спектр" };
+    private static readonly string[] MODE_NAMES_EN = { "time plot", "polar mode", "3D mode", "FFT spectrum" };
 
     private int _mode = MODE_TIME;
-    private string _status = "не подключено";
+    private string _status = Lang.T("не подключено", "not connected");
 
     // Поворот 3D-сцены
     private double _rotY = -0.7, _rotX = 0.5;
@@ -36,6 +37,7 @@ internal sealed class MainForm : Form
     private readonly Button _portBtn = new();     // «Порт ▾» — выбор порта
     private readonly ContextMenuStrip _portMenu = new();
     private readonly ComboBox _baudBox = new();   // бодрейт — можно ввести вручную
+    private readonly Label _baudLabel = new();
     private readonly Button _connectBtn = new();
     private readonly Button _modeBtn = new();     // «Режим ▾» — выбор режима отрисовки
     private readonly ContextMenuStrip _modeMenu = new();
@@ -66,14 +68,16 @@ internal sealed class MainForm : Form
         };
         HandleCreated += (_, _) => Theme.ApplyTitleBar(this);
 
-        // Настройки прошлого запуска: тема, частота дискретизации, каналы
+        // Настройки прошлого запуска: тема, язык, частота дискретизации, каналы
         Settings.Load();
         Theme.Kind = (ThemeKind)Settings.Current.Theme;
+        Lang.English = Settings.Current.Language == 1;
         if (Settings.Current.Baud > 0) _baud = Settings.Current.Baud;
         PlotSettings.SampleRate = Math.Clamp(Settings.Current.SampleRate, 1, 1_000_000);
         PlotSettings.FftLog = Settings.Current.FftLog;
         PlotSettings.GlobalSmooth = (SmoothKind)Settings.Current.GlobalSmooth;
         PlotSettings.GlobalSmoothWindow = Math.Clamp(Settings.Current.GlobalSmoothWindow, 3, 501);
+        PlotSettings.PolarTrail = Math.Clamp(Settings.Current.PolarTrail, 10, 10000);
         DataHub.SeedChannels = Settings.Current.Channels.Select(c => new DataHub.SavedChannel
         {
             Name = c.Name,
@@ -164,10 +168,10 @@ internal sealed class MainForm : Form
 
         // Экспорт: правый клик по графику
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Сохранить снимок PNG", null, (_, _) => SavePng());
-        menu.Items.Add("Сохранить снимок SVG", null, (_, _) => SaveSvg());
+        menu.Items.Add(Lang.T("Сохранить снимок PNG", "Save PNG snapshot"), null, (_, _) => SavePng());
+        menu.Items.Add(Lang.T("Сохранить снимок SVG", "Save SVG snapshot"), null, (_, _) => SaveSvg());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Экспорт данных в CSV", null, (_, _) => ExportCsv());
+        menu.Items.Add(Lang.T("Экспорт данных в CSV", "Export data to CSV"), null, (_, _) => ExportCsv());
         _plot.ContextMenuStrip = menu;
 
         // Порядок добавления важен: Fill добавляем первым — он докируется последним.
@@ -191,10 +195,10 @@ internal sealed class MainForm : Form
         _serial.Closed += OnSerialClosed;
         _serial.Failed += msg =>
         {
-            _status = "ошибка порта";
+            _status = Lang.T("ошибка порта", "port error");
             _console.SetSendEnabled(false);
             UpdateTitle();
-            MessageBox.Show(this, $"Порт закрылся с ошибкой:\n{msg}", "Ошибка порта",
+            MessageBox.Show(this, $"Порт закрылся с ошибкой:\n{msg}", Lang.T("Ошибка порта", "Port error"),
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
         };
 
@@ -231,33 +235,35 @@ internal sealed class MainForm : Form
         AttachDropdown(_portBtn, _portMenu);
         UpdatePortBtn();
 
-        panel.Controls.Add(new Label { Text = "Бодрейт:", Left = 160, Top = 14, Width = 60 });
+        panel.Controls.Add(_baudLabel);
+        _baudLabel.Text = Lang.T("Бодрейт:", "Baud rate:");
+        _baudLabel.Left = 160; _baudLabel.Top = 14; _baudLabel.Width = 60;
         _baudBox.Left = 224; _baudBox.Top = 11; _baudBox.Width = 90;
         foreach (int b in BAUDS) _baudBox.Items.Add(b);
         _baudBox.Text = _baud.ToString();
 
-        _connectBtn.Text = "Подключить";
+        _connectBtn.Text = Lang.T("Подключить", "Connect");
         _connectBtn.Left = 322; _connectBtn.Top = 9; _connectBtn.Width = 130;
         _connectBtn.Click += (_, _) => ToggleConnect();
 
-        _modeBtn.Text = "Режим: Время";
+        _modeBtn.Text = $"{Lang.T("Режим", "Mode")}: {Lang.T("Время", "Time")}";
         _modeBtn.Left = 460; _modeBtn.Top = 9; _modeBtn.Width = 140;
         _modeMenu.Opening += (_, _) => BuildModeMenu();
         AttachDropdown(_modeBtn, _modeMenu);
 
-        var simBtn = new Button { Text = "Симулятор", Left = 608, Top = 9, Width = 100 };
+        var simBtn = new Button { Text = Lang.T("Симулятор", "Simulator"), Left = 608, Top = 9, Width = 100 };
         simBtn.Click += (_, _) => ShowSimulator();
 
-        _pauseBtn.Text = "Пауза";
+        _pauseBtn.Text = Lang.T("Пауза", "Pause");
         _pauseBtn.Left = 716; _pauseBtn.Top = 9; _pauseBtn.Width = 90;
         _pauseBtn.Click += (_, _) =>
         {
             DataHub.Paused = !DataHub.Paused;
-            _pauseBtn.Text = DataHub.Paused ? "Продолжить" : "Пауза";
+            _pauseBtn.Text = DataHub.Paused ? Lang.T("Продолжить", "Resume") : Lang.T("Пауза", "Pause");
             UpdateTitle();
         };
 
-        _toolsBtn.Text = "Инструменты ▾";
+        _toolsBtn.Text = Lang.T("Инструменты ▾", "Tools ▾");
         _toolsBtn.Left = 814; _toolsBtn.Top = 9; _toolsBtn.Width = 130;
         _toolsMenu.Opening += (_, _) => BuildToolsMenu();
         AttachDropdown(_toolsBtn, _toolsMenu);
@@ -270,12 +276,12 @@ internal sealed class MainForm : Form
         _time3dBox.Items.AddRange(new object[] { "3D: без времени", "3D: t → X", "3D: t → Y", "3D: t → Z" });
         _time3dBox.SelectedIndex = 0;
 
-        _spinBox.Text = "Вращение";
+        _spinBox.Text = Lang.T("Вращение", "Spin");
         _spinBox.Left = 140; _spinBox.Top = 48; _spinBox.Width = 80;
         _spinBox.Checked = true;
 
         // FFT: частота дискретизации и тип шкалы
-        _fftRateLabel.Text = "Частота, Гц:";
+        _fftRateLabel.Text = Lang.T("Частота, Гц:", "Sample rate, Hz:");
         _fftRateLabel.Left = 240; _fftRateLabel.Top = 48; _fftRateLabel.Width = 80;
 
         _fftRateBox.Left = 322; _fftRateBox.Top = 45; _fftRateBox.Width = 90;
@@ -288,7 +294,7 @@ internal sealed class MainForm : Form
             SaveSettings();
         };
 
-        _fftLogBox.Text = "Лог (дБ)";
+        _fftLogBox.Text = Lang.T("Лог (дБ)", "Log (dB)");
         _fftLogBox.Left = 424; _fftLogBox.Top = 48; _fftLogBox.Width = 90;
         _fftLogBox.Checked = PlotSettings.FftLog;
         _fftLogBox.CheckedChanged += (_, _) =>
@@ -315,7 +321,7 @@ internal sealed class MainForm : Form
     private static void AttachDropdown(Button btn, ContextMenuStrip menu) =>
         btn.Click += (_, _) => menu.Show(btn, new Point(0, btn.Height));
 
-    private void UpdatePortBtn() => _portBtn.Text = $"Порт: {(_port ?? "нет")} ▾";
+    private void UpdatePortBtn() => _portBtn.Text = $"{Lang.T("Порт", "Port")}: {(_port ?? Lang.T("нет", "none"))} ▾";
 
     // Содержимое меню порта собирается при каждом открытии: список портов
     // меняется динамически, галочки — по текущему выбору
@@ -323,7 +329,8 @@ internal sealed class MainForm : Form
     {
         _portMenu.Items.Clear();
         if (_portNames.Length == 0)
-            _portMenu.Items.Add(new ToolStripMenuItem("Порты не найдены — «Обновить список»") { Enabled = false });
+            _portMenu.Items.Add(new ToolStripMenuItem(Lang.T(
+                "Порты не найдены — «Обновить список»", "No ports found — use «Refresh list»")) { Enabled = false });
 
         foreach (string name in _portNames)
         {
@@ -334,7 +341,7 @@ internal sealed class MainForm : Form
         }
 
         _portMenu.Items.Add(new ToolStripSeparator());
-        var refresh = new ToolStripMenuItem("Обновить список портов");
+        var refresh = new ToolStripMenuItem(Lang.T("Обновить список портов", "Refresh port list"));
         refresh.Click += (_, _) => RefreshPorts();
         _portMenu.Items.Add(refresh);
     }
@@ -342,7 +349,7 @@ internal sealed class MainForm : Form
     private void BuildModeMenu()
     {
         _modeMenu.Items.Clear();
-        string[] names = { "Время", "Полярный", "3D", "Спектр FFT" };
+        string[] names = { Lang.T("Время", "Time"), Lang.T("Полярный", "Polar"), "3D", "FFT" };
         for (int m = 0; m < names.Length; m++)
         {
             var item = new ToolStripMenuItem(names[m]) { Checked = _mode == m };
@@ -355,9 +362,9 @@ internal sealed class MainForm : Form
     private void SetMode(int mode)
     {
         _mode = mode;
-        _modeBtn.Text = $"Режим: {mode switch
+        _modeBtn.Text = $"{Lang.T("Режим", "Mode")}: {mode switch
         {
-            MODE_TIME => "Время", MODE_POLAR => "Полярный",
+            MODE_TIME => Lang.T("Время", "Time"), MODE_POLAR => Lang.T("Полярный", "Polar"),
             MODE_3D => "3D", _ => "FFT",
         }}";
         _time3dBox.Visible = _spinBox.Visible = _mode == MODE_3D;
@@ -369,7 +376,7 @@ internal sealed class MainForm : Form
     {
         _toolsMenu.Items.Clear();
 
-        var ranges = new ToolStripMenuItem("Диапазоны графика…");
+        var ranges = new ToolStripMenuItem(Lang.T("Диапазоны графика…", "Plot ranges…"));
         ranges.Click += (_, _) =>
         {
             using var dlg = new RangeForm();
@@ -377,11 +384,11 @@ internal sealed class MainForm : Form
         };
         _toolsMenu.Items.Add(ranges);
 
-        var resetView = new ToolStripMenuItem("Сброс вида и маркеров");
+        var resetView = new ToolStripMenuItem(Lang.T("Сброс вида и маркеров", "Reset view and markers"));
         resetView.Click += (_, _) => PlotSettings.ResetView();
         _toolsMenu.Items.Add(resetView);
 
-        var resetAll = new ToolStripMenuItem("Полный сброс: порт, графики, вывод");
+        var resetAll = new ToolStripMenuItem(Lang.T("Полный сброс: порт, графики, вывод", "Full reset: port, plots, output"));
         resetAll.Click += (_, _) => FullReset();
         _toolsMenu.Items.Add(resetAll);
 
@@ -389,13 +396,17 @@ internal sealed class MainForm : Form
 
         // Глобальное сглаживание: по умолчанию «Нет»; канал со своим
         // сглаживанием (диалог «…») перекрывает глобальный режим
-        var smooth = new ToolStripMenuItem($"Сглаживание: {SmoothName(PlotSettings.GlobalSmooth)}");
-        foreach ((SmoothKind kind, string name) in new[]
+        var smooth = new ToolStripMenuItem($"{Lang.T("Сглаживание", "Smoothing")}: {SmoothName(PlotSettings.GlobalSmooth)}");
+        foreach ((SmoothKind kind, string ru, string en) in new[]
         {
-            (SmoothKind.None, "Нет"), (SmoothKind.MovingAverage, "Скользящее среднее"), (SmoothKind.Median, "Медиана"),
+            (SmoothKind.None, "Нет", "None"),
+            (SmoothKind.MovingAverage, "Скользящее среднее", "Moving average"),
+            (SmoothKind.Median, "Медиана", "Median"),
+            (SmoothKind.Gaussian, "Гауссово", "Gaussian"),
+            (SmoothKind.Exponential, "Экспоненциальное", "Exponential"),
         })
         {
-            var si = new ToolStripMenuItem(name) { Checked = PlotSettings.GlobalSmooth == kind };
+            var si = new ToolStripMenuItem(Lang.T(ru, en)) { Checked = PlotSettings.GlobalSmooth == kind };
             SmoothKind k = kind;
             si.Click += (_, _) =>
             {
@@ -405,8 +416,8 @@ internal sealed class MainForm : Form
             smooth.DropDownItems.Add(si);
         }
         smooth.DropDownItems.Add(new ToolStripSeparator());
-        var win = new ToolStripMenuItem($"Окно: {PlotSettings.GlobalSmoothWindow}");
-        foreach (int w in new[] { 3, 5, 9, 15, 25, 51 })
+        var win = new ToolStripMenuItem($"{Lang.T("Окно", "Window")}: {PlotSettings.GlobalSmoothWindow}");
+        foreach (int w in new[] { 3, 5, 7, 9, 11, 15, 21, 31, 51, 75, 101, 151, 201, 301, 501 })
         {
             var wi = new ToolStripMenuItem(w.ToString()) { Checked = PlotSettings.GlobalSmoothWindow == w };
             int ww = w;
@@ -422,16 +433,35 @@ internal sealed class MainForm : Form
 
         _toolsMenu.Items.Add(new ToolStripSeparator());
 
-        var theme = new ToolStripMenuItem($"Тема: {Theme.Kind switch
+        // Язык интерфейса: применяется сразу и запоминается
+        var lang = new ToolStripMenuItem(Lang.T("Язык", "Language"));
+        foreach ((int code, string name) in new[] { (0, "Русский"), (1, "English") })
         {
-            ThemeKind.Dark => "Тёмная", ThemeKind.Light => "Светлая", _ => "Киберпанк",
+            var li = new ToolStripMenuItem(name) { Checked = (Lang.English ? 1 : 0) == code };
+            int c = code;
+            li.Click += (_, _) =>
+            {
+                Lang.English = c == 1;
+                Settings.Current.Language = c;
+                Settings.Save();
+                ApplyLanguage();
+            };
+            lang.DropDownItems.Add(li);
+        }
+        _toolsMenu.Items.Add(lang);
+
+        _toolsMenu.Items.Add(new ToolStripSeparator());
+
+        var theme = new ToolStripMenuItem($"{Lang.T("Тема", "Theme")}: {Theme.Kind switch
+        {
+            ThemeKind.Dark => Lang.T("Тёмная", "Dark"), ThemeKind.Light => Lang.T("Светлая", "Light"), _ => "Киберпанк",
         }}");
-        foreach ((ThemeKind kind, string name) in new[]
+        foreach ((ThemeKind kind, string ru, string en) in new[]
         {
-            (ThemeKind.Dark, "Тёмная"), (ThemeKind.Light, "Светлая"), (ThemeKind.Cyberpunk, "Киберпанк"),
+            (ThemeKind.Dark, "Тёмная", "Dark"), (ThemeKind.Light, "Светлая", "Light"), (ThemeKind.Cyberpunk, "Киберпанк", "Cyberpunk"),
         })
         {
-            var ti = new ToolStripMenuItem(name) { Checked = Theme.Kind == kind };
+            var ti = new ToolStripMenuItem(Lang.T(ru, en)) { Checked = Theme.Kind == kind };
             ThemeKind k = kind;
             ti.Click += (_, _) =>
             {
@@ -447,10 +477,34 @@ internal sealed class MainForm : Form
 
     private static string SmoothName(SmoothKind k) => k switch
     {
-        SmoothKind.MovingAverage => "Скользящее среднее",
-        SmoothKind.Median => "Медиана",
-        _ => "Нет",
+        SmoothKind.MovingAverage => Lang.T("Скользящее среднее", "Moving average"),
+        SmoothKind.Median => Lang.T("Медиана", "Median"),
+        SmoothKind.Gaussian => Lang.T("Гауссово", "Gaussian"),
+        SmoothKind.Exponential => Lang.T("Экспоненциальное", "Exponential"),
+        _ => Lang.T("Нет", "None"),
     };
+
+    // Переключение языка: обновляем видимые строки главного окна
+    private void ApplyLanguage()
+    {
+        UpdatePortBtn();
+        _connectBtn.Text = _serial.IsOpen
+            ? Lang.T("Отключить", "Disconnect")
+            : Lang.T("Подключить", "Connect");
+        _pauseBtn.Text = DataHub.Paused ? Lang.T("Продолжить", "Resume") : Lang.T("Пауза", "Pause");
+        _toolsBtn.Text = Lang.T("Инструменты ▾", "Tools ▾");
+        _baudLabel.Text = Lang.T("Бодрейт:", "Baud rate:");
+        _fftRateLabel.Text = Lang.T("Частота, Гц:", "Sample rate, Hz:");
+        _fftLogBox.Text = Lang.T("Лог (дБ)", "Log (dB)");
+        _spinBox.Text = Lang.T("Вращение", "Spin");
+        SetMode(_mode);
+        _status = _serial.IsOpen ? $"{_port} @ {_baud}"
+                : _sim.Running ? Lang.T("симулятор", "simulator")
+                : Lang.T("не подключено", "not connected");
+        UpdateTitle();
+        _console.ApplyLanguage();
+        _channels.ApplyLanguage();
+    }
 
     private void FullReset()
     {
@@ -458,7 +512,7 @@ internal sealed class MainForm : Form
         DataHub.Reset();
         PlotSettings.ResetView();
         _console.Clear();
-        _status = "сброс: буферы порта, графики и вывод очищены";
+        _status = Lang.T("сброс: буферы порта, графики и вывод очищены", "reset: port buffers, plots and output cleared");
         UpdateTitle();
     }
 
@@ -488,21 +542,23 @@ internal sealed class MainForm : Form
         if (_serial.IsOpen)
         {
             _serial.Close(); // дернёт OnSerialClosed
-            _status = "отключено";
+            _status = Lang.T("отключено", "disconnected");
             UpdateTitle();
             return;
         }
 
         if (_port == null)
         {
-            MessageBox.Show(this, "Нет доступных COM-портов.\nПодключи ESP32 и выбери «Обновить список» в меню «Порт».",
-                            "Ошибка порта", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this,
+                Lang.T("Нет доступных COM-портов.\nПодключи ESP32 и выбери «Обновить список» в меню «Порт».",
+                       "No COM ports available.\nConnect the device and use «Refresh list» in the «Port» menu."),
+                Lang.T("Ошибка порта", "Port error"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         if (!int.TryParse(_baudBox.Text.Trim(), out int baud) || baud <= 0)
         {
-            MessageBox.Show(this, "Неверное значение бодрейта.", "Ошибка",
+            MessageBox.Show(this, Lang.T("Неверное значение бодрейта.", "Invalid baud rate value."), Lang.T("Ошибка", "Error"),
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -510,24 +566,24 @@ internal sealed class MainForm : Form
 
         // Открытие порта — в фоне: зависший драйвер не должен замораживать окно
         _connectBtn.Enabled = false;
-        _status = $"подключение к {_port}…";
+        _status = $"{Lang.T("подключение к", "connecting to")} {_port}…";
         UpdateTitle();
         string? error = await _serial.OpenAsync(_port, baud);
         _connectBtn.Enabled = true;
 
         if (error != null)
         {
-            _status = "не подключено";
+            _status = Lang.T("не подключено", "not connected");
             UpdateTitle();
-            MessageBox.Show(this, $"Не удалось открыть {_port}:\n{error}\n\n" +
-                            "Закрой монитор PlatformIO и плоттеры, проверь порт и бодрейт.",
-                            "Ошибка порта", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, $"{Lang.T("Не удалось открыть", "Failed to open")} {_port}:\n{error}\n\n" +
+                            Lang.T("Закрой монитор PlatformIO и плоттеры, проверь порт и бодрейт.", "Close the PlatformIO monitor and other plotters, check the port and baud rate."),
+                            Lang.T("Ошибка порта", "Port error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         DataHub.Reset(); // старые каналы от прошлого источника не нужны
         _status = $"{_port} @ {baud}";
-        _connectBtn.Text = "Отключить";
+        _connectBtn.Text = Lang.T("Отключить", "Disconnect");
         _console.SetSendEnabled(true);
         SaveSettings();
         UpdateTitle();
@@ -535,7 +591,7 @@ internal sealed class MainForm : Form
 
     private void OnSerialClosed()
     {
-        _connectBtn.Text = "Подключить";
+        _connectBtn.Text = Lang.T("Подключить", "Connect");
         _console.SetSendEnabled(false);
     }
 
@@ -556,11 +612,11 @@ internal sealed class MainForm : Form
     {
         if (_serial.IsOpen)
             _serial.Close();
-        _connectBtn.Text = "Подключить";
+        _connectBtn.Text = Lang.T("Подключить", "Connect");
         _connectBtn.Enabled = false; // один активный источник: либо порт, либо симулятор
         _console.SetSendEnabled(false);
         DataHub.Reset();             // старые каналы не смешиваем с виртуальными
-        _status = $"симулятор: {_sim.Channels.Count} канал(ов)";
+        _status = $"{Lang.T("симулятор", "simulator")}: {_sim.Channels.Count} {Lang.T("канал(ов)", "channel(s)")}";
         UpdateTitle();
     }
 
@@ -570,12 +626,13 @@ internal sealed class MainForm : Form
         if (!_serial.IsOpen)
             _console.SetSendEnabled(false);
         if (!_serial.IsOpen)
-            _status = "не подключено";
+            _status = Lang.T("не подключено", "not connected");
         UpdateTitle();
     }
 
     private void UpdateTitle() =>
-        Text = $"Serial Plotter — {_status} — {MODE_NAMES[_mode]}" + (DataHub.Paused ? " — ПАУЗА" : "");
+        Text = $"Serial Plotter — {_status} — {(Lang.English ? MODE_NAMES_EN[_mode] : MODE_NAMES_RU[_mode])}" +
+               (DataHub.Paused ? (Lang.English ? " — PAUSED" : " — ПАУЗА") : "");
 
     // --- Зум, панорама, маркеры (режим «Время») ---
 
@@ -847,12 +904,12 @@ internal sealed class MainForm : Form
         {
             double t0 = PlotSettings.LastXMin / PlotSettings.SampleRate;
             double t1 = PlotSettings.LastXMax / PlotSettings.SampleRate;
-            timeInfo = $"   время: {t0:0.###}–{t1:0.###} с";
+            timeInfo = $"   {Lang.T("время", "time")}: {t0:0.###}2013{t1:0.###} {Lang.T("с", "s")}";
         }
 
-        g.DrawString($"{_status}   каналов: {DataHub.Channels.Count}   " +
-                     $"точек: {DataHub.Channels.FirstOrDefault()?.Data.Count ?? 0}{timeInfo}" +
-                     (_mode == MODE_TIME && !forExport ? "   (F1 — справка по навигации)" : ""),
+        g.DrawString($"{_status}   {Lang.T("каналов", "channels")}: {DataHub.Channels.Count}   " +
+                     $"{Lang.T("точек", "points")}: {DataHub.Channels.FirstOrDefault()?.Data.Count ?? 0}{timeInfo}" +
+                     (_mode == MODE_TIME && !forExport ? Lang.T("   (F1 — справка по навигации)", "   (F1 — navigation help)") : ""),
                      font, textBrush, rect.Left, rect.Bottom + 42);
     }
 
@@ -886,9 +943,9 @@ internal sealed class MainForm : Form
 
         using var dlg = new SaveFileDialog
         {
-            Filter = "PNG-изображение|*.png",
+            Filter = Lang.T("PNG-изображение|*.png", "PNG image|*.png"),
             FileName = "serialplot.png",
-            Title = "Сохранить снимок графика",
+            Title = Lang.T("Сохранить снимок графика", "Save plot snapshot"),
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -901,7 +958,7 @@ internal sealed class MainForm : Form
         }
         ResetViewIfExported();
         bmp.Save(dlg.FileName, System.Drawing.Imaging.ImageFormat.Png);
-        _status = $"снимок сохранён: {Path.GetFileName(dlg.FileName)}";
+        _status = $"{Lang.T("снимок сохранён", "snapshot saved")}: {Path.GetFileName(dlg.FileName)}";
         UpdateTitle();
     }
 
@@ -911,9 +968,9 @@ internal sealed class MainForm : Form
 
         using var dlg = new SaveFileDialog
         {
-            Filter = "SVG-изображение|*.svg",
+            Filter = Lang.T("SVG-изображение|*.svg", "SVG image|*.svg"),
             FileName = "serialplot.svg",
-            Title = "Сохранить снимок графика",
+            Title = Lang.T("Сохранить снимок графика", "Save plot snapshot"),
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -926,7 +983,7 @@ internal sealed class MainForm : Form
         // в именах каналов); SvgNet пишет их как &#xNN; — чистим ссылки
         File.WriteAllText(dlg.FileName, StripInvalidXmlChars(
             svg.WriteSVGString(_plot.ClientSize.Width, _plot.ClientSize.Height)));
-        _status = $"снимок сохранён: {Path.GetFileName(dlg.FileName)}";
+        _status = $"{Lang.T("снимок сохранён", "snapshot saved")}: {Path.GetFileName(dlg.FileName)}";
         UpdateTitle();
     }
 
@@ -944,7 +1001,7 @@ internal sealed class MainForm : Form
     {
         if (DataHub.Channels.Count == 0 || DataHub.Channels.All(c => c.Data.Count == 0))
         {
-            MessageBox.Show(this, "Нет данных для экспорта.", "Экспорт CSV",
+            MessageBox.Show(this, Lang.T("Нет данных для экспорта.", "No data to export."), Lang.T("Экспорт CSV", "CSV export"),
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -964,9 +1021,9 @@ internal sealed class MainForm : Form
 
         using var dlg = new SaveFileDialog
         {
-            Filter = "CSV (разделитель — запятая)|*.csv",
+            Filter = Lang.T("CSV (разделитель — запятая)|*.csv", "CSV (comma-separated)|*.csv"),
             FileName = "serialplot.csv",
-            Title = "Экспорт данных каналов",
+            Title = Lang.T("Экспорт данных каналов", "Export channel data"),
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -1036,6 +1093,8 @@ internal sealed class MainForm : Form
         s.FftLog = PlotSettings.FftLog;
         s.GlobalSmooth = (int)PlotSettings.GlobalSmooth;
         s.GlobalSmoothWindow = PlotSettings.GlobalSmoothWindow;
+        s.PolarTrail = PlotSettings.PolarTrail;
+        s.Language = Lang.English ? 1 : 0;
         s.Channels = DataHub.Channels.Select(c => new Settings.ChannelInfo
         {
             Name = c.Name,

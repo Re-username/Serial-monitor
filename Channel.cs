@@ -37,6 +37,8 @@ public enum SmoothKind
     None,          // без сглаживания
     MovingAverage, // скользящее среднее
     Median,        // медианный фильтр
+    Gaussian,      // взвешенное скользящее среднее (гауссово ядро)
+    Exponential,   // экспоненциальное сглаживание (EMA)
 }
 
 public static class LineKindExt
@@ -81,6 +83,9 @@ public static class PlotSettings
     // Применяется к каналам, у которых не задано своё сглаживание.
     public static SmoothKind GlobalSmooth = SmoothKind.None;
     public static int GlobalSmoothWindow = 9;
+
+    // Хвост траектории в полярном режиме, точек (настройка «Диапазоны»)
+    public static int PolarTrail = 400;
 
     // Пределы, которые реально использовались в последней отрисовке —
     // MainForm пересчитывает по ним пиксели мыши в значения данных
