@@ -102,7 +102,7 @@ The **«Mode ▾»** button switches the rendering:
 
 - **Left-drag** — zoom-to-region rectangle: both axes take the range of the
   selected area (a plain click without dragging places marker A/B).
-- **Middle button** (or left button when zoomed) — panning.
+- **Middle button** — panning.
 - **Mouse wheel**:
   - **Ctrl + wheel** — zoom both axes to the cursor;
   - **Alt + wheel** — stretch/compress horizontally;
@@ -179,7 +179,10 @@ noise, constant, random walk), frequency, amplitude and offset. **«Start»** �
 data flows into the same pipeline as from the COM port (50 lines/s): visible
 both on the plot and in the console. The simulator runs **together with a
 connected port**: virtual channels are drawn after the port's channels (or
-vice versa), and neither source overwrites the other's data.
+vice versa), and neither source overwrites the other's data. When both are
+active the simulator is **clocked by the port** — one sample per received
+line, so the signals move strictly in sync; on start the simulator
+back-generates its history so both signals begin at the same moment.
 
 > If you need output to a **real virtual COM port** (so any third-party
 > program can see the data), install the [com0com](https://com0com.sourceforge.net/)

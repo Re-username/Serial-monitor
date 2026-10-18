@@ -130,6 +130,34 @@ public static class TimePlot
             string maxLabel = $"{(long)xmax + 1} {Lang.T("точ.", "pts")}";
             g.DrawString(maxLabel, font, textBrush,
                          rect.Right - PlotUtil.Measure(g, maxLabel, font).Width, rect.Bottom + 4);
+
+            // Время под числами точек — сколько секунд на этих позициях
+            double sr = Math.Max(PlotSettings.SampleRate, 1e-6);
+            using var timeFont = new Font("Segoe UI", 8.5f);
+            using var timeBrush = new SolidBrush(Theme.Axis);
+            string tLeft = $"{Math.Max(0, xmin) / sr:0.#} {Lang.T("с", "s")}";
+            g.DrawString(tLeft, timeFont, timeBrush, rect.Left, rect.Bottom + 18);
+            string tRight = $"{(xmax + 1) / sr:0.#} {Lang.T("с", "s")}";
+            g.DrawString(tRight, timeFont, timeBrush,
+                         rect.Right - PlotUtil.Measure(g, tRight, timeFont).Width, rect.Bottom + 18);
+        }
+
+        // Тонкая оранжевая линия живого края: отсюда график сейчас строится.
+        // Ориентир при панораме — видно, где кончаются данные
+        if (xs == null && count > 0)
+        {
+            double edgeX = DataHub.TotalLines - 1; // абсолютный индекс самой свежей точки
+            if (edgeX >= xmin && edgeX <= xmax)
+            {
+                int sx = rect.Left + (int)(rect.Width * (edgeX - xmin) / (xmax - xmin));
+                using var startPen = new Pen(Color.Orange, 1);
+                g.DrawLine(startPen, sx, rect.Top, sx, rect.Bottom);
+                using var startFont = new Font("Segoe UI", 8f);
+                using var startBrush = new SolidBrush(Color.Orange);
+                string edgeLabel = Lang.T("сейчас", "live");
+                g.DrawString(edgeLabel, startFont, startBrush,
+                             sx - PlotUtil.Measure(g, edgeLabel, startFont).Width - 3, rect.Top + 2);
+            }
         }
 
         // Линии графиков (и слой сглаживания поверх)
@@ -342,9 +370,11 @@ public static class TimePlot
         string yLabel = yval.ToString("0.##");
         g.DrawString(yLabel, font, yBrush, rect.Left - 45, ctx.MouseY - 8);
 
-        // Значение по оси X — вниз, под график
+        // Значение по оси X — вниз, под график; для времени рядом секунды
         double xval = xmin + (ctx.MouseX - rect.Left) * (xmax - xmin) / rect.Width;
-        string xLabel = xs == null ? $"t = {(int)Math.Round(xval)}" : $"{xval:0.##}";
+        string xLabel = xs == null
+            ? $"t = {(int)Math.Round(xval)} ({xval / Math.Max(PlotSettings.SampleRate, 1e-6):0.#} {Lang.T("с", "s")})"
+            : $"{xval:0.##}";
         g.DrawString(xLabel, font, yBrush, ctx.MouseX + 4, rect.Bottom + 4);
 
         // Значения каналов в точке курсора (ищем ближайший индекс)

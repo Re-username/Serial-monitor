@@ -11,6 +11,10 @@ public static class DataHub
 
     public static readonly List<Channel> Channels = new();
 
+    // Всего принято строк данных (числовых). Абсолютный индекс самой свежей
+    // точки = TotalLines - 1; по нему TimePlot рисует линию начала данных
+    public static long TotalLines;
+
     // Пауза записи: сырые строки уходят в консоль, но в каналы не добавляются
     public static bool Paused;
 
@@ -84,6 +88,7 @@ public static class DataHub
                     ch.Data.Dequeue();
                 ch.Last = values[i];
             }
+            TotalLines++; // абсолютный индекс самой свежей точки = TotalLines - 1
         }
         // Строка целиком нечисловая — заголовок с именами каналов.
         // Принимаем всегда: после перезагрузки контроллер шлёт его заново,

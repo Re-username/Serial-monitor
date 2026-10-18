@@ -27,6 +27,7 @@ internal sealed class MainForm : Form
     // Выделение области (зум) и панорамирование в режиме «Время»
     private bool _selecting, _panning;
     private bool _dragMoved; // левая кнопка реально протащили (иначе это клик)
+    private bool _suppressMarker; // MouseUp после двойного клика не ставит маркер
     private Point _dragStart;
     private Rectangle _selRect;
     private bool _pendingViewReset; // сбросить зум после экспорта
@@ -113,17 +114,12 @@ internal sealed class MainForm : Form
             }
             else if (e.Button == MouseButtons.Left)
             {
-                // Левая кнопка: клик — маркер, протяжка — рамка зума
-                // (или панорама, если вид уже зумлен). Различим по перемещению.
+                // Левая кнопка: клик — маркер, протяжка — рамка зума.
+                // Всегда одно и то же: после панорамы зум не «выпадает»
                 _selecting = true;
                 _dragStart = e.Location;
                 _selRect = Rectangle.Empty;
                 _dragMoved = false;
-                if (PlotSettings.ViewXMin != null)
-                {
-                    InitViewFromCurrent();
-                    _panning = true;
-                }
             }
         };
         _plot.MouseMove += (_, e) =>
@@ -159,7 +155,8 @@ internal sealed class MainForm : Form
 
             if (!_dragMoved)
             {
-                PlaceMarker(e.X); // просто клик — ставим линейку A, потом B
+                if (_suppressMarker) _suppressMarker = false; // это MouseUp после двойного клика
+                else PlaceMarker(e.X); // просто клик — ставим линейку A, потом B
             }
             else if (_selRect.Width > 8 && _selRect.Height > 8)
             {
@@ -168,7 +165,11 @@ internal sealed class MainForm : Form
             _selRect = Rectangle.Empty;
         };
         _plot.MouseLeave += (_, _) => _mousePos = new Point(-1, -1);
-        _plot.DoubleClick += (_, _) => PlotSettings.ResetView();
+        _plot.DoubleClick += (_, _) =>
+        {
+            PlotSettings.ResetView();
+            _suppressMarker = true; // MouseUp идёт ПОСЛЕ DoubleClick — иначе поставит маркер A
+        };
         _plot.Paint += OnPaint;
 
         // Экспорт: правый клик по графику
@@ -204,6 +205,11 @@ internal sealed class MainForm : Form
             DataHub.PushLine(line, _portChannelOffset);
             // каналы мог создать и заголовок — считаем по факту после записи
             _portCount = Math.Max(_portCount, DataHub.Channels.Count - _portChannelOffset);
+            TrackPortRate();
+            // Внешний такт симулятора: один его отсчёт на строку порта —
+            // сигналы идут строго вместе
+            if (_sim.Running && _sim.ExternalClock)
+                _sim.ExternalTick();
         };
         _serial.Closed += OnSerialClosed;
         _serial.Failed += msg =>
@@ -535,6 +541,26 @@ internal sealed class MainForm : Form
         UpdateTitle();
     }
 
+    // --- Скорость потока порта: для временной базы внешнего такта симулятора ---
+
+    private int _rateWindowLines;                   // строк за текущее окно
+    private DateTime _rateWindowStart = DateTime.Now;
+    private double _portRate = 50;                  // измеренная скорость, строк/с
+
+    private void TrackPortRate()
+    {
+        _rateWindowLines++;
+        double dt = (DateTime.Now - _rateWindowStart).TotalSeconds;
+        if (dt >= 1.0)
+        {
+            _portRate = _rateWindowLines / dt;
+            if (_sim.Running && _sim.ExternalClock)
+                _sim.ExternalRate = _portRate; // симулятор подстраивает временную базу
+            _rateWindowLines = 0;
+            _rateWindowStart = DateTime.Now;
+        }
+    }
+
     // --- Порт ---
 
     private void RefreshPorts()
@@ -606,6 +632,8 @@ internal sealed class MainForm : Form
             DataHub.Reset(); // без симулятора — старые каналы от прошлого источника не нужны
         _portChannelOffset = _sim.Running ? _simChannelOffset + _simCount : 0;
         _portCount = 0; // уточнится по первой строке с данными
+        if (_sim.Running)
+            _sim.UseExternalClock(); // симулятор переходит на такт порта
         _status = $"{_port} @ {baud}" + (_sim.Running ? $" + {Lang.T("симулятор", "simulator")}" : "");
         _connectBtn.Text = Lang.T("Отключить", "Disconnect");
         _console.SetSendEnabled(true);
@@ -617,6 +645,9 @@ internal sealed class MainForm : Form
     {
         _connectBtn.Text = Lang.T("Подключить", "Connect");
         _console.SetSendEnabled(false);
+        // Порт пропал — симулятор переключается на свой внутренний такт
+        if (_sim.Running && _sim.ExternalClock)
+            _sim.UseInternalClock();
     }
 
     // --- Симулятор ---
@@ -662,15 +693,20 @@ internal sealed class MainForm : Form
         _simCount = _sim.Channels.Count;
 
         // Совместно с портом: догенерируем сигнал симулятора задним числом,
-        // чтобы он начинался с того же момента, что и сигнал порта
+        // чтобы он начинался с того же момента, что и сигнал порта; дальше
+        // симулятор идёт по внешнему такту — один отсчёт на строку порта
         if (_serial.IsOpen)
         {
+            _sim.UseExternalClock();
+            _sim.ExternalRate = _portRate;
             int portPoints = _portChannelOffset < DataHub.Channels.Count
                 ? DataHub.Channels.Skip(_portChannelOffset).Max(c => c.Data.Count)
                 : 0;
             if (portPoints > 1)
-                _sim.GenerateHistory(portPoints);
+                _sim.GenerateHistory(portPoints, _portRate);
         }
+        else
+            _sim.UseInternalClock();
 
         _status = (_serial.IsOpen ? $"{_port} @ {_baud} + " : "") +
                   $"{Lang.T("симулятор", "simulator")}: {_sim.Channels.Count} {Lang.T("канал(ов)", "channel(s)")}";
@@ -696,10 +732,11 @@ internal sealed class MainForm : Form
 
     // --- Зум, панорама, маркеры (режим «Время») ---
 
-    // Область графика: поля слева под подписи оси Y, снизу — под оси X, легенду, статус
+    // Область графика: поля слева под подписи оси Y, снизу — под оси X,
+    // время, легенду и статус (статус у нижнего края панели)
     private Rectangle PlotRect => new(56, 16,
         Math.Max(50, _plot.ClientSize.Width - 76),
-        Math.Max(50, _plot.ClientSize.Height - 80));
+        Math.Max(50, _plot.ClientSize.Height - 96));
 
     private double XAt(int px)
     {
@@ -743,7 +780,7 @@ internal sealed class MainForm : Form
         if (ctrl) ZoomAt(p, dir > 0 ? 0.8 : 1.25);
         else if (alt && shift) StretchY(p, dir > 0 ? 0.8 : 1.25);
         else if (alt) StretchX(p, dir > 0 ? 0.8 : 1.25);
-        else if (shift) PanX(dir * 0.15);
+        else if (shift) PanX(-dir * 0.15); // колесо вверх — влево (как прокрутка)
         else PanY(dir * 0.15);
     }
 
@@ -949,28 +986,27 @@ internal sealed class MainForm : Form
             foreach (var ch in ctx.YChannels)
             {
                 using var dotBrush = new SolidBrush(ch.Color);
-                g.FillRectangle(dotBrush, lx, rect.Bottom + 24, 10, 10);
+                g.FillRectangle(dotBrush, lx, rect.Bottom + 38, 10, 10);
                 string label = $"{ch.Name} = {ch.Last:0.##}";
                 using var legendFont = new Font("Segoe UI", 10f, FontStyle.Bold);
                 using var legendBrush = new SolidBrush(ch.Color);
-                g.DrawString(label, legendFont, legendBrush, lx + 14, rect.Bottom + 20);
+                g.DrawString(label, legendFont, legendBrush, lx + 14, rect.Bottom + 34);
                 lx += (int)PlotUtil.Measure(g, label, legendFont).Width + 34;
             }
         }
 
-        // Время краёв видимого окна — рядом с числом точек
+        // Общее время за сеанс — рядом с числом точек
         string timeInfo = "";
         if (_mode == MODE_TIME && _channels.XIndex < 0 && DataHub.Channels.Count > 0)
         {
-            double t0 = PlotSettings.LastXMin / PlotSettings.SampleRate;
-            double t1 = PlotSettings.LastXMax / PlotSettings.SampleRate;
-            timeInfo = $"   {Lang.T("время", "time")}: {t0:0.###}2013{t1:0.###} {Lang.T("с", "s")}";
+            double total = DataHub.TotalLines / Math.Max(PlotSettings.SampleRate, 1e-6);
+            timeInfo = $"   {Lang.T("общее время", "total time")}: {total:0.###} {Lang.T("с", "s")}";
         }
 
         g.DrawString($"{_status}   {Lang.T("каналов", "channels")}: {DataHub.Channels.Count}   " +
                      $"{Lang.T("точек", "points")}: {DataHub.Channels.FirstOrDefault()?.Data.Count ?? 0}{timeInfo}" +
                      (_mode == MODE_TIME && !forExport ? Lang.T("   (F1 — справка по навигации)", "   (F1 — navigation help)") : ""),
-                     font, textBrush, rect.Left, rect.Bottom + 42);
+                     font, textBrush, rect.Left, rect.Bottom + 56);
     }
 
     // --- Экспорт ---

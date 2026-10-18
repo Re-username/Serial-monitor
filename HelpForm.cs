@@ -32,7 +32,7 @@ public sealed class HelpForm : Form
             "                          цикл заново (клик в любом\r\n" +
             "                          месте графика)\r\n" +
             "  Протяжка левой кнопкой  рамка зума (обе оси)\r\n" +
-            "  Средняя кнопка          панорама (левая — тоже, при зуме)\r\n" +
+            "  Средняя кнопка          панорама\r\n" +
             "  Двойной клик            сброс вида и маркеров\r\n" +
             "\r\n" +
             "КОЛЕСО МЫШИ\r\n" +
@@ -65,7 +65,7 @@ public sealed class HelpForm : Form
             "                          the cycle restarts (click\r\n" +
             "                          anywhere on the plot)\r\n" +
             "  Left drag               zoom rectangle (both axes)\r\n" +
-            "  Middle button           pan (left button too, when zoomed)\r\n" +
+            "  Middle button           pan\r\n" +
             "  Double click            reset view and markers\r\n" +
             "\r\n" +
             "MOUSE WHEEL\r\n" +

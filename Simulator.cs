@@ -54,6 +54,14 @@ public sealed class Simulator : IDisposable
 
     public bool Running { get; private set; }
 
+    // Внешний такт: когда порт подключён, симулятор не тикает по своему
+    // таймеру — один отсчёт на каждую принятую строку порта (1:1). Тогда
+    // сигнал симулятора идёт строго вместе с сигналом порта, без разъезда
+    public bool ExternalClock { get; set; }
+    // Скорость внешнего такта, отсчётов/с (измеряется по потоку порта);
+    // определяет временную базу волн
+    public double ExternalRate { get; set; } = 50;
+
     public event Action<string>? LineGenerated;
     public event Action? Started;
     public event Action? Stopped;
@@ -74,9 +82,11 @@ public sealed class Simulator : IDisposable
 
         Running = true;
         _sw.Restart();
-        Started?.Invoke(); // сначала событие: MainForm сбросит старые каналы и закроет порт
+        _t = 0;
+        Started?.Invoke(); // сначала событие: MainForm расставит смещения каналов
         LineGenerated?.Invoke(string.Join(",", Channels.Select(c => c.Name))); // заголовок
-        _timer.Start();
+        if (!ExternalClock)
+            _timer.Start();
     }
 
     public void Stop()
@@ -87,21 +97,52 @@ public sealed class Simulator : IDisposable
         Stopped?.Invoke();
     }
 
-    private void Tick()
+    private double _t; // текущее время генерации, сек
+
+    private void Emit(double t)
     {
-        double t = _sw.Elapsed.TotalSeconds;
         string line = string.Join(",",
             Channels.Select(c => c.Compute(t, _rnd).ToString("0.###", CultureInfo.InvariantCulture)));
         LineGenerated?.Invoke(line);
     }
 
-    // Ретроспектива: count строк «из прошлого» с тем же шагом, что и тики
-    // (50/с), время от -count*dt до 0. Нужна, чтобы при совместной работе
-    // с портом сигнал симулятора начинался с того же момента, что и сигнал
-    // порта, а не с момента нажатия «Старт»
-    public void GenerateHistory(int count)
+    private void Tick()
     {
-        const double dt = 0.02;
+        if (ExternalClock) return; // такт приходит извне — из обработчика порта
+        _t += 1.0 / 50;
+        Emit(_t);
+    }
+
+    // Один отсчёт по внешнему такту (вызывается на каждую строку порта)
+    public void ExternalTick()
+    {
+        if (!Running || !ExternalClock) return;
+        _t += 1.0 / Math.Clamp(ExternalRate, 1, 1000);
+        Emit(_t);
+    }
+
+    // Переключение на внешний такт (порт подключился) / обратно (порт закрылся)
+    public void UseExternalClock()
+    {
+        ExternalClock = true;
+        _timer.Stop();
+    }
+
+    public void UseInternalClock()
+    {
+        ExternalClock = false;
+        ExternalRate = 50;
+        if (Running)
+            _timer.Start();
+    }
+
+    // Ретроспектива: count строк «из прошлого» с шагом 1/rate, время
+    // от -count/rate до 0. Нужна, чтобы при совместной работе с портом
+    // сигнал симулятора начинался с того же момента, что и сигнал порта,
+    // а не с момента нажатия «Старт»
+    public void GenerateHistory(int count, double rate)
+    {
+        double dt = 1.0 / Math.Clamp(rate, 1, 1000);
         var walks = Channels.Select(c => c.Offset).ToArray();
         for (int i = 0; i < count; i++)
         {
