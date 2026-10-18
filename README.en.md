@@ -96,7 +96,7 @@ The **«Mode ▾»** button switches the rendering:
 | **Time** | Channel plots over time (shared scale), or an XY plot if a channel is assigned to axis X |
 | **Polar** | The first two visible channels as a vector: R (deviation) and φ (angle) |
 | **3D** | The first three visible channels as a trajectory in space; rotate by dragging with the mouse. In this mode the toolbar shows extra settings: the **«3D: no time / t → X / t → Y / t → Z»** selector replaces the chosen axis with time — then two visible channels are enough (they take the remaining axes); the **«Spin»** checkbox toggles scene auto-rotation |
-| **FFT** | Spectrum of the first visible channel (Hann window, FFT up to 4096 points). In the toolbar: **«Sample rate, Hz»** (default 50 Hz — the simulator rate; set the actual rate for real hardware), **«Log (dB)»** — logarithmic (dB) or linear amplitude scale. The plot header shows the peak frequency and level |
+| **FFT** | Spectrum of the first visible channel (FFT up to 4096 points). In the toolbar: **«Sample rate, Hz»** (default 50 Hz — the simulator rate; set the actual rate for real hardware), **«Log (dB)»** — logarithmic (dB) or linear amplitude scale, **«Window»** — window function: rectangular (max frequency resolution, strong spectral leakage), Hann (balanced, default), Hamming, Blackman, Blackman-Harris (max side-lobe suppression). The plot header shows the peak frequency and level |
 
 ### Zoom, pan, markers (Time mode)
 
@@ -231,7 +231,7 @@ ChannelsPanel.cs     — channel manager: visibility, color, edit dialog, X axis
 ConsolePanel.cs      — raw port data console
 TimePlot.cs          — time plot / XY plot: ruler, markers, zoom view, smoothing layer
 FftPlot.cs           — FFT mode: channel spectrum, linear/dB scale
-Fft.cs               — iterative radix-2 FFT with Hann window
+Fft.cs               — iterative radix-2 FFT, window functions
 ExportForm.cs        — export segment selection dialog
 Settings.cs          — settings persistence (JSON in %AppData%)
 RangeForm.cs         — plot ranges dialog

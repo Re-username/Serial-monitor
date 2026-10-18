@@ -79,6 +79,9 @@ public static class PlotSettings
 
     public static bool FftLog = true;   // FFT: логарифмическая шкала (дБ)
 
+    // Оконная функция FFT (тулбар, режим FFT)
+    public static FftWindowKind FftWindow = FftWindowKind.Hann;
+
     // Глобальное сглаживание (меню «Инструменты»): по умолчанию выключено.
     // Применяется к каналам, у которых не задано своё сглаживание.
     public static SmoothKind GlobalSmooth = SmoothKind.None;

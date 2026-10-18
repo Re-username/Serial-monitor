@@ -57,6 +57,8 @@ internal sealed class MainForm : Form
     private readonly Label _fftRateLabel = new();
     private readonly NumericUpDown _fftRateBox = new();
     private readonly CheckBox _fftLogBox = new();
+    private readonly Label _fftWinLabel = new();
+    private readonly ComboBox _fftWinBox = new();
     private readonly Button _pauseBtn = new();
     private readonly SerialLink _serial = new();
     private readonly Simulator _sim = new();
@@ -81,6 +83,7 @@ internal sealed class MainForm : Form
         if (Settings.Current.Baud > 0) _baud = Settings.Current.Baud;
         PlotSettings.SampleRate = Math.Clamp(Settings.Current.SampleRate, 1, 1_000_000);
         PlotSettings.FftLog = Settings.Current.FftLog;
+        PlotSettings.FftWindow = (FftWindowKind)Math.Clamp(Settings.Current.FftWindow, 0, 4);
         PlotSettings.GlobalSmooth = (SmoothKind)Settings.Current.GlobalSmooth;
         PlotSettings.GlobalSmoothWindow = Math.Clamp(Settings.Current.GlobalSmoothWindow, 3, 501);
         PlotSettings.PolarTrail = Math.Clamp(Settings.Current.PolarTrail, 10, 10000);
@@ -326,13 +329,31 @@ internal sealed class MainForm : Form
             SaveSettings();
         };
 
+        // Оконная функция FFT
+        _fftWinLabel.Text = Lang.T("Окно:", "Window:");
+        _fftWinLabel.Left = 524; _fftWinLabel.Top = 48; _fftWinLabel.Width = 44;
+        _fftWinBox.Left = 570; _fftWinBox.Top = 45; _fftWinBox.Width = 130;
+        _fftWinBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _fftWinBox.Items.AddRange(new object[]
+        {
+            Lang.T("Прямоугольное", "Rectangular"), Lang.T("Ханна", "Hann"),
+            Lang.T("Хэмминга", "Hamming"), Lang.T("Блэкмана", "Blackman"),
+            Lang.T("Блэкмана-Харриса", "Blackman-Harris"),
+        });
+        _fftWinBox.SelectedIndex = (int)PlotSettings.FftWindow;
+        _fftWinBox.SelectedIndexChanged += (_, _) =>
+        {
+            PlotSettings.FftWindow = (FftWindowKind)_fftWinBox.SelectedIndex;
+            SaveSettings();
+        };
+
         _time3dBox.Visible = _spinBox.Visible = false;
-        _fftRateLabel.Visible = _fftRateBox.Visible = _fftLogBox.Visible = false;
+        _fftRateLabel.Visible = _fftRateBox.Visible = _fftLogBox.Visible = _fftWinLabel.Visible = _fftWinBox.Visible = false;
 
         panel.Controls.AddRange(new Control[]
         {
             _portBtn, _baudBox, _connectBtn, _modeBtn, simBtn, _pauseBtn, _toolsBtn,
-            _time3dBox, _spinBox, _fftRateLabel, _fftRateBox, _fftLogBox,
+            _time3dBox, _spinBox, _fftRateLabel, _fftRateBox, _fftLogBox, _fftWinLabel, _fftWinBox,
         });
         Controls.Add(panel);
 
@@ -391,7 +412,7 @@ internal sealed class MainForm : Form
             MODE_3D => "3D", _ => "FFT",
         }}";
         _time3dBox.Visible = _spinBox.Visible = _mode == MODE_3D;
-        _fftRateLabel.Visible = _fftRateBox.Visible = _fftLogBox.Visible = _mode == MODE_FFT;
+        _fftRateLabel.Visible = _fftRateBox.Visible = _fftLogBox.Visible = _fftWinLabel.Visible = _fftWinBox.Visible = _mode == MODE_FFT;
         UpdateTitle();
     }
 
@@ -1186,6 +1207,7 @@ internal sealed class MainForm : Form
         s.Theme = (int)Theme.Kind;
         s.XIndex = _channels.XIndex;
         s.SampleRate = PlotSettings.SampleRate;
+        s.FftWindow = (int)PlotSettings.FftWindow;
         s.FftLog = PlotSettings.FftLog;
         s.GlobalSmooth = (int)PlotSettings.GlobalSmooth;
         s.GlobalSmoothWindow = PlotSettings.GlobalSmoothWindow;

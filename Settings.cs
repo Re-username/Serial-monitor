@@ -27,6 +27,7 @@ public static class Settings
         public int XIndex { get; set; } = -1;
         public double SampleRate { get; set; } = 50;
         public bool FftLog { get; set; } = true;
+        public int FftWindow { get; set; } = (int)FftWindowKind.Hann;
         public int GlobalSmooth { get; set; }
         public int GlobalSmoothWindow { get; set; } = 9;
         public int Language { get; set; }        // 0 — русский, 1 — English

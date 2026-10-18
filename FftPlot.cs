@@ -36,7 +36,7 @@ public static class FftPlot
         }
 
         double fs = Math.Max(PlotSettings.SampleRate, 1e-6);
-        double[] mag = Fft.MagnitudeSpectrum(ch.Data.TakeLast(n).ToArray());
+        double[] mag = Fft.MagnitudeSpectrum(ch.Data.TakeLast(n).ToArray(), PlotSettings.FftWindow);
         bool log = PlotSettings.FftLog;
 
         // Вертикальная шкала

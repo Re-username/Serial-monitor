@@ -1,9 +1,38 @@
 namespace SerialPlotter;
 
+// Оконная функция FFT: влияет на разрешение по частоте и утечку спектра
+public enum FftWindowKind
+{
+    Rectangular,    // без окна — максимальное разрешение, сильная утечка
+    Hann,           // баланс разрешение/утечка (по умолчанию)
+    Hamming,        // как Ханн, чуть меньше утечка на первой боковой
+    Blackman,       // сильное подавление боковых лепестков
+    BlackmanHarris, // максимальное подавление боковых
+}
+
 // Итеративный radix-2 БПФ (Кули–Тьюки) с побитовой перестановкой.
 // Вход — n комплексных отсчётов, n — степень двойки; результат на месте.
 public static class Fft
 {
+    // Коэффициенты оконной функции длины n (симметричные)
+    public static double[] Window(FftWindowKind kind, int n)
+    {
+        var w = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            double x = 2.0 * Math.PI * i / (n - 1); // 0..2π
+            w[i] = kind switch
+            {
+                FftWindowKind.Hann => 0.5 - 0.5 * Math.Cos(x),
+                FftWindowKind.Hamming => 0.54 - 0.46 * Math.Cos(x),
+                FftWindowKind.Blackman => 0.42 - 0.5 * Math.Cos(x) + 0.08 * Math.Cos(2 * x),
+                FftWindowKind.BlackmanHarris => 0.35875 - 0.48829 * Math.Cos(x)
+                                              + 0.14128 * Math.Cos(2 * x) - 0.01168 * Math.Cos(3 * x),
+                _ => 1.0, // Rectangular
+            };
+        }
+        return w;
+    }
     public static void Compute(Span<(double Re, double Im)> a)
     {
         int n = a.Length;
@@ -36,19 +65,19 @@ public static class Fft
         }
     }
 
-    // Спектр последних samples.Length отсчётов: окно Ханна + БПФ + амплитуды.
-    // Возвращает n/2+1 амплитуд. Нормировка на сумму окна компенсирует
-    // когерентное усиление Ханна (0.5) — амплитуда синуса читается напрямую.
-    public static double[] MagnitudeSpectrum(double[] samples)
+    // Спектр последних samples.Length отсчётов: оконная функция + БПФ +
+    // амплитуды. Возвращает n/2+1 амплитуд. Нормировка на сумму окна
+    // компенсирует когерентное усиление — амплитуда синуса читается напрямую.
+    public static double[] MagnitudeSpectrum(double[] samples, FftWindowKind window = FftWindowKind.Hann)
     {
         int n = samples.Length;
         var a = new (double Re, double Im)[n];
+        double[] win = Window(window, n);
         double winSum = 0;
         for (int i = 0; i < n; i++)
         {
-            double w = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (n - 1)); // Ханн
-            winSum += w;
-            a[i] = (samples[i] * w, 0);
+            winSum += win[i];
+            a[i] = (samples[i] * win[i], 0);
         }
         Compute(a);
 
