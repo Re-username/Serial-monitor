@@ -32,6 +32,8 @@ public static class Settings
         public int GlobalSmoothWindow { get; set; } = 9;
         public int Language { get; set; }        // 0 — русский, 1 — English
         public int PolarTrail { get; set; } = 400; // хвост траектории в полярном режиме, точек
+        public bool DtrReset { get; set; }        // дергать DTR при подключении (перезагрузка платы)
+        public string PortEncoding { get; set; } = "utf-8"; // кодировка строк порта
         public List<ChannelInfo> Channels { get; set; } = new();
     }
 

@@ -149,7 +149,11 @@ The first row is buttons with dropdown menus:
   **«Full reset»** (port, plots, output), **«Smoothing»** — a global filter
   for all channels: off (default) / moving average / median / Gaussian /
   exponential with a window choice; a channel with its own smoothing (the
-  «…» dialog) overrides the global mode. Plus the **«Theme»** submenu
+  «…» dialog) overrides the global mode. **«Reset board on connect (DTR)»** —
+  turn it off so connecting does not reset the board; turn it on if you want an
+  automatic reset. **«Port encoding»** — how to decode the device's strings:
+  UTF-8 (default), Windows-1251, ASCII, UTF-16. Applied on the next connect.
+  Plus the **«Theme»** submenu
   (dark / light / cyberpunk) and the **«Language»** submenu (Русский / English).
 
 The second row shows the active mode's settings (visible only in their modes):
@@ -169,7 +173,11 @@ time axis and auto-rotation in 3D, sample rate and scale in FFT.
 An always-visible log of raw lines from the source (port or simulator)
 with timestamps. **«Pause»** and **«Clear»** buttons. An input box +
 **«Send»** (or Enter) — send data to the open port. The **Incoming** tab
-shows received lines, **Outgoing** — what you sent.
+shows received lines, **Outgoing** — what you sent. The log height can be
+changed by dragging the thin grip on the panel's top edge. The **«⧉»** button
+**pops the log out into a separate window** — resize it freely, up to full
+screen, while the plot in the main window takes the whole height. Clicking
+«⧉» again (or closing the log window) docks the console back.
 
 ### Simulator
 
@@ -216,7 +224,7 @@ back-generates its history so both signals begin at the same moment.
 ## Project structure
 
 ```
-SerialPlotter.csproj — project (.NET 8, WinForms, System.IO.Ports)
+SerialPlotter.csproj — project (.NET 8, WinForms, System.IO.Ports, System.Text.Encoding.CodePages)
 app.ico              — application icon
 Program.cs           — entry point
 MainForm.cs          — main window: toolbar, layout, timers, render dispatcher

@@ -24,7 +24,10 @@ public sealed class SerialLink : IDisposable
 
     // Открывает порт в фоновом потоке. Возвращает null при успехе
     // или текст ошибки (включая таймаут зависшего драйвера).
-    public async Task<string?> OpenAsync(string portName, int baud)
+    // dtrEnable: true — выставить DTR (многие платы перезагружаются от этого),
+    // false — не трогать плату при подключении.
+    // encoding: как декодировать байты в строки (кириллица и пр. не-ASCII)
+    public async Task<string?> OpenAsync(string portName, int baud, bool dtrEnable, System.Text.Encoding encoding)
     {
         // Создание и Open — в фоне: зависший драйвер не должен замораживать UI.
         // Таймер и поле назначаются после await в потоке вызова: WinForms Timer
@@ -34,7 +37,14 @@ public sealed class SerialLink : IDisposable
         {
             try
             {
-                var port = new SerialPort(portName, baud) { ReadTimeout = 100, NewLine = "\n" };
+                // Кодировка: устройства шлют UTF-8/CP1251/..., по умолчанию
+                // SerialPort читает ASCII и заменяет не-ASCII на '?'
+                var port = new SerialPort(portName, baud)
+                {
+                    ReadTimeout = 100, NewLine = "\n",
+                    DtrEnable = dtrEnable,
+                    Encoding = encoding,
+                };
                 try { port.Open(); }
                 catch
                 {
@@ -58,6 +68,10 @@ public sealed class SerialLink : IDisposable
         if (error != null) return error.Message;
 
         _port = opened;
+        // Декодируем сами (Read читает сырые байты) — той же кодировкой,
+        // что и SerialPort для Write
+        _encoding = encoding;
+        _decoder = encoding.GetDecoder();
         _timer.Start();
         return null;
     }
@@ -69,7 +83,14 @@ public sealed class SerialLink : IDisposable
     private const int RxBufSize = 4096;
 
     private readonly byte[] _rxBuf = new byte[RxBufSize];
+    private readonly char[] _rxChars = new char[RxBufSize * 2]; // UTF-16: до 2 символов на байт... хватит с запасом
     private string _rxTail = ""; // остаток после последнего перевода строки
+
+    // Декодер выбранной кодировки: хранит состояние между чтениями, чтобы
+    // мультибайтовый символ (UTF-8/UTF-16), разорванный между пачками байт,
+    // склеивался, а не превращался в кракозябру
+    private Encoding _encoding = Encoding.ASCII;
+    private Decoder _decoder = Encoding.ASCII.GetDecoder();
 
     private void Read()
     {
@@ -81,8 +102,8 @@ public sealed class SerialLink : IDisposable
             int n = port.Read(_rxBuf, 0, Math.Min(port.BytesToRead, RxBufSize));
             if (n <= 0) return;
 
-            // ASCII: байты >127 — '?'; при неверном бодрейте всё равно мусор
-            string chunk = Encoding.ASCII.GetString(_rxBuf, 0, n);
+            int chars = _decoder.GetChars(_rxBuf, 0, n, _rxChars, 0);
+            string chunk = new(_rxChars, 0, chars);
             string text = _rxTail + chunk;
 
             int start = 0, nl;
@@ -136,6 +157,7 @@ public sealed class SerialLink : IDisposable
     public void DiscardBuffers()
     {
         _rxTail = "";
+        _decoder.Reset(); // выкинуть недокодированный хвост
         if (_port is not { IsOpen: true }) return;
         try { _port.DiscardInBuffer(); _port.DiscardOutBuffer(); } catch { }
     }

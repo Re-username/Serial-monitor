@@ -18,11 +18,17 @@ public sealed class ConsolePanel : Panel
     private readonly TabControl _tabs;
     private readonly TextBox _sendBox;
     private readonly Button _sendBtn;
+    private readonly Button _popBtn;   // «вынести в отдельное окно»
+    private readonly Panel _grip;      // захват для изменения высоты
     private readonly Queue<string> _queue = new();
     private bool _paused;
 
+    // true, пока консоль отсоединена в отдельное окно (захват высоты не работает)
+    public bool Detached { get; set; }
+
     // Отправка строки в порт; false — порт закрыт, отправить нельзя
     public Func<string, bool>? SendLine;
+    public event Action? PopOutRequested;
 
     public ConsolePanel()
     {
@@ -64,13 +70,47 @@ public sealed class ConsolePanel : Panel
         _sendBtn.Click += (_, _) => SendCurrent();
         SetSendEnabled(false);
 
+        // «Вынести в отдельное окно»: лог открывается в своей форме
+        // (можно развернуть на весь экран), график занимает всю высоту
+        _popBtn = new Button { Text = "⧉", Left = 942, Top = 4, Width = 30, Height = 24 };
+        new ToolTip().SetToolTip(_popBtn, Lang.T("Вынести лог в отдельное окно", "Pop the log out into its own window"));
+        _popBtn.Click += (_, _) => PopOutRequested?.Invoke();
+
         header.Controls.Add(_pauseBtn);
         header.Controls.Add(_clearBtn);
         header.Controls.Add(_sendBtn);
         header.Controls.Add(_sendBox);
+        header.Controls.Add(_popBtn);
 
+        // Захват высоты: тянем верхний край консоли — высота меняется,
+        // график подстраивается (не работает, пока консоль в отдельном окне).
+        // Полоса яркая, с точками-«ручкой» — видно границу и что её можно тащить
+        _grip = new Panel { Dock = DockStyle.Top, Height = 6, Cursor = Cursors.SizeNS };
+        _grip.Paint += (_, e) =>
+        {
+            using var back = new SolidBrush(Theme.Accent);
+            e.Graphics.FillRectangle(back, 0, 0, _grip.Width, 3);
+            using var dotBrush = new SolidBrush(Theme.PlotBg);
+            for (int x = 4; x < _grip.Width - 4; x += 8)
+                e.Graphics.FillRectangle(dotBrush, x, 1, 3, 1);
+        };
+        int dragStartY = 0, dragStartH = 0;
+        _grip.MouseDown += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left) { dragStartY = Cursor.Position.Y; dragStartH = Height; }
+        };
+        _grip.MouseMove += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left || Detached || Parent == null) return;
+            int d = Cursor.Position.Y - dragStartY; // тянем вверх — консоль выше
+            int maxH = Math.Max(80, Parent.ClientSize.Height - 120); // графику оставить место
+            Height = Math.Clamp(dragStartH - d, 60, maxH);
+        };
+
+        // Порядок важен: _grip докируется выше header (добавлен позже)
         Controls.Add(_tabs);   // Fill — добавляем первым, докируется последним
-        Controls.Add(header); // Top
+        Controls.Add(header);  // Top
+        Controls.Add(_grip);   // Top — самый верхний край консоли
 
         ApplyLanguage();
 

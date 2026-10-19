@@ -36,6 +36,34 @@ internal sealed class MainForm : Form
     // после портовых (и наоборот), чтобы данные не затирали друг друга
     private int _portChannelOffset, _simChannelOffset;
     private int _portCount, _simCount;
+    private bool _dtrReset; // дергать DTR при подключении (перезагрузка платы)
+
+    // Кодировка строк порта: utf-8 по умолчанию, cp1251 для старых устройств
+    private static readonly (string Code, string Ru, string En)[] Encodings =
+    {
+        ("utf-8", "UTF-8", "UTF-8"),
+        ("cp1251", "Windows-1251", "Windows-1251"),
+        ("ascii", "ASCII", "ASCII"),
+        ("utf-16", "UTF-16 (Unicode)", "UTF-16 (Unicode)"),
+    };
+    private string _portEncoding = "utf-8";
+
+    private System.Text.Encoding PortEncoding
+    {
+        get
+        {
+            // Кодовые страницы (1251 и др.) в .NET 8 доступны только через
+            // провайдер из System.Text.Encoding.CodePages
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+            return _portEncoding switch
+            {
+                "cp1251" => System.Text.Encoding.GetEncoding(1251),
+                "ascii" => System.Text.Encoding.ASCII,
+                "utf-16" => System.Text.Encoding.Unicode,
+                _ => System.Text.Encoding.UTF8,
+            };
+        }
+    }
 
     private readonly PlotPanel _plot = new() { Dock = DockStyle.Fill };
     private readonly ChannelsPanel _channels = new();
@@ -80,6 +108,8 @@ internal sealed class MainForm : Form
         Settings.Load();
         Theme.Kind = (ThemeKind)Settings.Current.Theme;
         Lang.English = Settings.Current.Language == 1;
+        _dtrReset = Settings.Current.DtrReset;
+        _portEncoding = Settings.Current.PortEncoding;
         if (Settings.Current.Baud > 0) _baud = Settings.Current.Baud;
         PlotSettings.SampleRate = Math.Clamp(Settings.Current.SampleRate, 1, 1_000_000);
         PlotSettings.FftLog = Settings.Current.FftLog;
@@ -230,6 +260,7 @@ internal sealed class MainForm : Form
             _serial.Send(line);
             return true;
         };
+        _console.PopOutRequested += ToggleConsoleWindow;
 
         _sim.LineGenerated += line =>
         {
@@ -477,6 +508,36 @@ internal sealed class MainForm : Form
 
         _toolsMenu.Items.Add(new ToolStripSeparator());
 
+        // DTR при подключении: удобно прошивать/перезагружать плату одним
+        // кликом, но для простого наблюдения за данными плату дёргать не нужно
+        var dtr = new ToolStripMenuItem(Lang.T(
+            "Перезагрузка платы при подключении (DTR)",
+            "Reset board on connect (DTR)"))
+        { Checked = _dtrReset };
+        dtr.Click += (_, _) =>
+        {
+            _dtrReset = !_dtrReset;
+            Settings.Current.DtrReset = _dtrReset;
+            Settings.Save();
+        };
+        _toolsMenu.Items.Add(dtr);
+
+        // Кодировка строк порта: применяется при следующем подключении
+        var enc = new ToolStripMenuItem(Lang.T("Кодировка порта", "Port encoding"));
+        foreach ((string code, string ru, string en) in Encodings)
+        {
+            var ei = new ToolStripMenuItem(Lang.T(ru, en)) { Checked = _portEncoding == code };
+            string c = code;
+            ei.Click += (_, _) =>
+            {
+                _portEncoding = c;
+                Settings.Current.PortEncoding = c;
+                Settings.Save();
+            };
+            enc.DropDownItems.Add(ei);
+        }
+        _toolsMenu.Items.Add(enc);
+
         // Язык интерфейса: применяется сразу и запоминается
         var lang = new ToolStripMenuItem(Lang.T("Язык", "Language"));
         foreach ((int code, string name) in new[] { (0, "Русский"), (1, "English") })
@@ -634,7 +695,7 @@ internal sealed class MainForm : Form
         _connectBtn.Enabled = false;
         _status = $"{Lang.T("подключение к", "connecting to")} {_port}…";
         UpdateTitle();
-        string? error = await _serial.OpenAsync(_port, baud);
+        string? error = await _serial.OpenAsync(_port, baud, _dtrReset, PortEncoding);
         _connectBtn.Enabled = true;
 
         if (error != null)
@@ -669,6 +730,50 @@ internal sealed class MainForm : Form
         // Порт пропал — симулятор переключается на свой внутренний такт
         if (_sim.Running && _sim.ExternalClock)
             _sim.UseInternalClock();
+    }
+
+    // --- Окно лога (консоль можно вынести из главного окна) ---
+
+    private Form? _consoleForm;
+    private bool _consolePopped;
+
+    // Отрыв/возврат консоли. В отдельном окне лог растягивается как удобно,
+    // вплоть до полного экрана; график при этом занимает всю высоту главного окна
+    private void ToggleConsoleWindow()
+    {
+        if (_consolePopped)
+        {
+            _consoleForm?.Close(); // вернёт консоль через FormClosed
+            return;
+        }
+
+        _consolePopped = true;
+        Controls.Remove(_console);
+        _console.Detached = true;
+
+        _consoleForm = new Form
+        {
+            Text = Lang.T("Лог порта", "Port log"),
+            StartPosition = FormStartPosition.CenterScreen,
+            ClientSize = new Size(1000, 600),
+            Icon = Icon,
+        };
+        Theme.Apply(_consoleForm);
+        _consoleForm.HandleCreated += (_, _) => Theme.ApplyTitleBar(_consoleForm);
+        _consoleForm.Controls.Add(_console);
+        _console.Dock = DockStyle.Fill;
+        _consoleForm.FormClosed += (_, _) =>
+        {
+            // возврат консоли в главное окно
+            _consoleForm.Controls.Remove(_console);
+            _console.Dock = DockStyle.Bottom;
+            _console.Height = 150;
+            Controls.Add(_console);
+            _console.Detached = false;
+            _consolePopped = false;
+            _consoleForm = null;
+        };
+        _consoleForm.Show(this);
     }
 
     // --- Симулятор ---
@@ -1208,6 +1313,8 @@ internal sealed class MainForm : Form
         s.XIndex = _channels.XIndex;
         s.SampleRate = PlotSettings.SampleRate;
         s.FftWindow = (int)PlotSettings.FftWindow;
+        s.DtrReset = _dtrReset;
+        s.PortEncoding = _portEncoding;
         s.FftLog = PlotSettings.FftLog;
         s.GlobalSmooth = (int)PlotSettings.GlobalSmooth;
         s.GlobalSmoothWindow = PlotSettings.GlobalSmoothWindow;
