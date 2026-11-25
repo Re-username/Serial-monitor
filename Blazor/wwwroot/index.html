@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru" class="theme-cyberpunk">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Serial Plotter</title>
+    <base href="./" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script src="js/app.js"></script>
+    <script>
+        (function () {
+            var theme = "cyberpunk";
+            try { theme = localStorage.getItem("serialplotter-theme") || theme; } catch (e) { }
+            document.documentElement.className = "theme-" + theme;
+        })();
+    </script>
+</head>
+
+<body>
+    <div id="app">
+        <div class="loading-screen">
+            <div class="spinner"></div>
+            <div>Загрузка Serial Plotter…</div>
+            <pre id="boot-error"></pre>
+        </div>
+    </div>
+    <script>
+        (function () {
+            function show(message) {
+                var el = document.getElementById("boot-error");
+                if (!el) return;
+                el.textContent += message + "\n";
+            }
+            window.addEventListener("error", function (e) {
+                show((e.message || "Ошибка загрузки") + (e.filename ? " (" + e.filename + ":" + e.lineno + ")" : ""));
+            }, true);
+            window.addEventListener("unhandledrejection", function (e) {
+                show("Promise: " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+            });
+        })();
+    </script>
+    <script src="_framework/blazor.webview.js"></script>
+</body>
+
+</html>

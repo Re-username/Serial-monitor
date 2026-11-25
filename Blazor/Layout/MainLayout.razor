@@ -1,0 +1,15 @@
+@namespace SerialPlotter.Blazor.Layout
+
+@inherits LayoutComponentBase
+
+<main class="app-shell">
+    <ErrorBoundary>
+        <ChildContent>@Body</ChildContent>
+        <ErrorContent Context="ex">
+            <div class="fatal-error">
+                <h2>Ошибка интерфейса</h2>
+                <pre>@ex.GetType().Name: @ex.Message</pre>
+            </div>
+        </ErrorContent>
+    </ErrorBoundary>
+</main>

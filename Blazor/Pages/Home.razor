@@ -1,0 +1,1198 @@
+@namespace SerialPlotter.Blazor.Pages
+@page "/"
+@using System.Globalization
+@inject AppState State
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Serial Plotter</PageTitle>
+
+<div class="plotter-page">
+    <header class="topbar">
+        <div class="toolbar-row">
+            <div class="brand"><span class="brand-mark"></span><span>Serial Plotter</span></div>
+
+            <span class="label">@T("Порт", "Port")</span>
+            <select class="field" value="@State.SelectedPort" @onchange="OnPortChanged" style="min-width:112px">
+                @if (State.PortNames.Length == 0)
+                {
+                    <option value="">@T("нет портов", "no ports")</option>
+                }
+                @foreach (string port in State.PortNames)
+                {
+                    <option value="@port">@port</option>
+                }
+            </select>
+            <button class="btn" @onclick="RefreshPorts">⟳</button>
+
+            <span class="label">@T("Бодрейт", "Baud")</span>
+            <input class="field baud" @bind="State.BaudText" inputmode="numeric" />
+            <select class="field baud-preset" value="" @onchange="OnBaudSelected" title="@T("Типовые бодрейты", "Common baud rates")">
+                <option value="">▾</option>
+                @foreach (int baud in AppState.Bauds)
+                {
+                    <option value="@baud">@baud</option>
+                }
+            </select>
+
+            <button class="btn primary" disabled="@State.Connecting" @onclick="ToggleConnect">
+                @(State.Serial.IsOpen ? T("Отключить", "Disconnect") : T("Подключить", "Connect"))
+            </button>
+
+            <span class="label">@T("Режим", "Mode")</span>
+            <select class="field" value="@State.Mode" @onchange="OnModeChanged">
+                <option value="Time">@T("Время", "Time")</option>
+                <option value="Polar">@T("Полярный", "Polar")</option>
+                <option value="ThreeD">3D</option>
+                <option value="Fft">FFT</option>
+            </select>
+
+            <button class="btn" @onclick="() => State.ShowSimulator = true">@T("Симулятор", "Simulator")</button>
+            <button class="btn" @onclick="() => State.ShowChannels = !State.ShowChannels">@T("Каналы", "Channels")</button>
+            <button class="btn" @onclick="State.TogglePause">@(DataHub.Paused ? T("Продолжить", "Resume") : T("Пауза", "Pause"))</button>
+
+            <details class="menu" open="@(_toolsOpen ? "open" : null)">
+                <summary class="btn">@T("Инструменты", "Tools") ▾</summary>
+                <div class="menu-panel">
+                    <button @onclick="() => State.ShowRanges = true">@T("Диапазоны графика…", "Plot ranges…")</button>
+                    <button @onclick="ResetView">@T("Сброс вида и маркеров", "Reset view and markers")</button>
+                    <button @onclick="State.FullReset">@T("Полный сброс", "Full reset")</button>
+                    <hr />
+                    <label>@T("Сглаживание", "Smoothing")</label>
+                    <select class="field small" value="@PlotSettings.GlobalSmooth" @onchange="OnGlobalSmoothChanged">
+                        <option value="None">@T("Нет", "None")</option>
+                        <option value="MovingAverage">@T("Скользящее среднее", "Moving average")</option>
+                        <option value="Median">@T("Медиана", "Median")</option>
+                        <option value="Gaussian">@T("Гауссово", "Gaussian")</option>
+                        <option value="Exponential">@T("Экспоненциальное", "Exponential")</option>
+                    </select>
+                    <label>@T("Окно", "Window")</label>
+                    <input class="field small" type="number" min="3" max="501" step="2" @bind="PlotSettings.GlobalSmoothWindow" @bind:after="State.ScheduleSave" />
+                    <hr />
+                    <label class="checkbox"><input type="checkbox" @bind="State.DtrReset" @bind:after="State.ScheduleSave" /> @T("DTR при подключении", "DTR on connect")</label>
+                    <label>@T("Кодировка порта", "Port encoding")</label>
+                    <select class="field small" @bind="State.PortEncoding" @bind:after="State.ScheduleSave">
+                        <option value="utf-8">UTF-8</option>
+                        <option value="cp1251">Windows-1251</option>
+                        <option value="ascii">ASCII</option>
+                        <option value="utf-16">UTF-16</option>
+                    </select>
+                    <label>@T("Язык", "Language")</label>
+                    <select class="field small" value="@(Lang.English ? "en" : "ru")" @onchange="OnLanguageChanged">
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                    </select>
+                    <label>@T("Тема", "Theme")</label>
+                    <select class="field small" value="@State.ThemeName" @onchange="OnThemeChanged">
+                        <option value="cyberpunk">Cyberpunk</option>
+                        <option value="dark">@T("Тёмная", "Dark")</option>
+                        <option value="light">@T("Светлая", "Light")</option>
+                    </select>
+                </div>
+            </details>
+
+            <button class="btn" @onclick="CycleTheme" title="@T("Сменить тему (F12)", "Cycle theme (F12)")">@ThemeButtonText</button>
+            <button class="btn ghost" @onclick="() => State.ShowHelp = true">F1</button>
+            <div class="status-pill" title="@State.Status">@State.Status</div>
+        </div>
+
+        @if (State.Mode == PlotMode.ThreeD)
+        {
+            <div class="mode-settings">
+                <span class="label">3D:</span>
+                <select class="field small" @bind="State.Time3DAxis">
+                    <option value="0">@(VisibleChannelCount() == 2 ? T("авто: t → X", "auto: t → X") : T("без времени", "no time"))</option>
+                    <option value="1">t → X</option>
+                    <option value="2">t → Y</option>
+                    <option value="3">t → Z</option>
+                </select>
+                <label class="checkbox"><input type="checkbox" @bind="State.Spin3D" /> @T("Вращение", "Spin")</label>
+            </div>
+        }
+        else if (State.Mode == PlotMode.Fft)
+        {
+            <div class="mode-settings">
+                <span class="label">@T("Частота, Гц", "Sample rate, Hz")</span>
+                <input class="field small" type="number" min="1" max="1000000" step="10" @bind="PlotSettings.SampleRate" @bind:after="State.ScheduleSave" style="width:110px" />
+                <label class="checkbox"><input type="checkbox" @bind="PlotSettings.FftLog" @bind:after="State.ScheduleSave" /> @T("Лог (дБ)", "Log (dB)")</label>
+                <span class="label">@T("Окно", "Window")</span>
+                <select class="field small" @bind="PlotSettings.FftWindow" @bind:after="State.ScheduleSave">
+                    <option value="Rectangular">@T("Прямоугольное", "Rectangular")</option>
+                    <option value="Hann">@T("Ханна", "Hann")</option>
+                    <option value="Hamming">@T("Хэмминга", "Hamming")</option>
+                    <option value="Blackman">@T("Блэкмана", "Blackman")</option>
+                    <option value="BlackmanHarris">@T("Блэкмана-Харриса", "Blackman-Harris")</option>
+                </select>
+            </div>
+        }
+    </header>
+
+    @if (State.ErrorMessage != null)
+    {
+        <div class="alert">
+            @State.ErrorMessage
+            <button class="btn small" @onclick="() => State.ErrorMessage = null">OK</button>
+        </div>
+    }
+
+    <section class="workspace">
+        <div class="plot-card" @ref="_plotElement"
+             @onpointerdown="OnPointerDown" @onpointermove="OnPointerMove" @onpointerup="OnPointerUp"
+             @onpointerleave="OnPointerLeave" @onpointercancel="OnPointerLeave" @onwheel:preventDefault @ondblclick="OnDoubleClick"
+             @oncontextmenu="OnContextMenu" @oncontextmenu:preventDefault>
+            @((MarkupString)_svg)
+
+            @if (_contextMenu)
+            {
+                <div class="context-menu" style="left:@(_contextX)px; top:@(_contextY)px">
+                    <button @onclick='() => StartExport("svg")'>@T("Сохранить снимок SVG", "Save SVG snapshot")</button>
+                    <button @onclick='() => StartExport("png")'>@T("Сохранить снимок PNG", "Save PNG snapshot")</button>
+                    <button @onclick='() => StartExport("csv")'>@T("Экспорт данных в CSV", "Export data to CSV")</button>
+                </div>
+            }
+
+            <div class="plot-legend">
+                @foreach (var channel in VisibleYChannels())
+                {
+                    <span class="legend-item" style="color:@channel.Color">
+                        <span class="legend-swatch" style="background:@channel.Color"></span>
+                        @channel.Name = @channel.Last.ToString("0.##", CultureInfo.InvariantCulture)
+                    </span>
+                }
+            </div>
+        </div>
+
+        @if (State.ShowChannels)
+        {
+        <aside class="side-card">
+            <div class="card-header">
+                <span>@T("Каналы", "Channels")</span>
+                <span class="label">@DataHub.Count</span>
+            </div>
+            <div class="card-body">
+                <label class="label" for="x-axis">@T("Ось X", "X axis")</label>
+                <select id="x-axis" class="field" style="width:100%; margin:5px 0 10px" value="@State.XIndex" @onchange="OnXIndexChanged">
+                    <option value="-1">@T("Время", "Time")</option>
+                    @for (int i = 0; i < DataHub.Count; i++)
+                    {
+                        var channel = DataHub.ChannelAt(i);
+                        if (channel != null)
+                        {
+                            <option value="@i">@channel.Name</option>
+                        }
+                    }
+                </select>
+
+                @if (DataHub.Count == 0)
+                {
+                    <div class="empty-state">@T("Нет данных — подключись к порту или запусти симулятор.",
+                        "No data — connect to a port or start the simulator.")</div>
+                }
+                else
+                {
+                    @for (int i = 0; i < DataHub.Count; i++)
+                    {
+                        var channel = DataHub.ChannelAt(i);
+                        if (channel == null)
+                            continue;
+                        bool isX = i == State.XIndex;
+                        <div class="channel-row">
+                            <input type="checkbox" checked="@channel.Visible" disabled="@isX" @onchange="e => SetChannelVisible(channel, e)" />
+                            <input type="color" @bind="channel.Color" @bind:after="OnChannelConfigChanged" title='@T("Цвет", "Color")' />
+                            <span class="channel-name" title="@channel.Name">@channel.Name@(isX ? $" — {T("ось X", "X axis")}" : "")</span>
+                            <button class="btn small" @onclick="() => BeginEditChannel(channel)">…</button>
+                        </div>
+                    }
+                }
+            </div>
+        </aside>
+        }
+    </section>
+
+    <div class="console-splitter" @ref="_splitterElement" title='@T("Потяни, чтобы изменить высоту консоли", "Drag to resize the console")'
+         @onpointerdown="OnSplitterDown" @onpointermove="OnSplitterMove" @onpointerup="OnSplitterUp" @onpointercancel="OnSplitterUp"></div>
+
+    <section class="console-card" style="height:@(_consoleHeight)px">
+        <div class="card-header">
+            <div class="console-tabs">
+                <button class='tab-btn @(_consoleTab == 0 ? "active" : "")' @onclick="() => _consoleTab = 0">@T("Входящие", "Incoming")</button>
+                <button class='tab-btn @(_consoleTab == 1 ? "active" : "")' @onclick="() => _consoleTab = 1">@T("Исходящие", "Outgoing")</button>
+            </div>
+            <div>
+                <button class="btn small" @onclick="State.ClearConsole">@T("Очистить", "Clear")</button>
+            </div>
+        </div>
+        <pre class="console-log" @ref="_consoleLog">@string.Join("\n", VisibleConsole())</pre>
+        <div class="send-row">
+            <input class="field" placeholder='@T("Строка в порт…", "Line to port…")' @bind="_sendText" @onkeydown="OnSendKeyDown" disabled="@(!State.Serial.IsOpen)" />
+            <button class="btn" disabled="@(!State.Serial.IsOpen)" @onclick="SendCurrent">@T("Отправить", "Send")</button>
+        </div>
+    </section>
+</div>
+
+@if (State.ShowHelp)
+{
+    <div class="modal-backdrop" @onclick="() => State.ShowHelp = false">
+        <div class="modal wide" @onclick:stopPropagation>
+            <div class="modal-header"><span>@T("Справка", "Help")</span><button class="btn small" @onclick="() => State.ShowHelp = false">×</button></div>
+            <div class="modal-body"><pre class="help-pre">@HelpText</pre></div>
+        </div>
+    </div>
+}
+
+@if (State.ShowSimulator)
+{
+    <div class="modal-backdrop" @onclick="() => State.ShowSimulator = false">
+        <div class="modal wide" @onclick:stopPropagation>
+            <div class="modal-header"><span>@T("Симулятор", "Simulator")</span><button class="btn small" @onclick="() => State.ShowSimulator = false">×</button></div>
+            <div class="modal-body">
+                @foreach (var channel in State.Sim.Channels)
+                {
+                    <div class="form-grid" style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border)">
+                        <div class="form-field"><span class="label">@T("Имя", "Name")</span><input class="field" @bind="channel.Name" /></div>
+                        <div class="form-field"><span class="label">@T("Форма", "Wave")</span>
+                            <select class="field" @bind="channel.Wave">
+                                <option value="Sine">@T("Синус", "Sine")</option>
+                                <option value="Square">@T("Прямоугольник", "Square")</option>
+                                <option value="Saw">@T("Пила", "Saw")</option>
+                                <option value="Noise">@T("Шум", "Noise")</option>
+                                <option value="Constant">@T("Постоянный", "Constant")</option>
+                                <option value="Walk">@T("Блуждание", "Walk")</option>
+                            </select>
+                        </div>
+                        <div class="form-field"><span class="label">@T("Частота", "Frequency")</span><input class="field" type="number" step="0.1" @bind="channel.Frequency" /></div>
+                        <div class="form-field"><span class="label">@T("Амплитуда", "Amplitude")</span><input class="field" type="number" step="0.1" @bind="channel.Amplitude" /></div>
+                        <div class="form-field"><span class="label">@T("Смещение", "Offset")</span><input class="field" type="number" step="0.1" @bind="channel.Offset" /></div>
+                        <div class="form-field"><span class="label">&nbsp;</span><button class="btn danger" @onclick="() => State.Sim.Channels.Remove(channel)">@T("Удалить", "Remove")</button></div>
+                    </div>
+                }
+                <button class="btn" @onclick="AddSimulatorChannel">+ @T("Канал", "Channel")</button>
+            </div>
+            <div class="modal-footer">
+                @if (State.Sim.Running)
+                {
+                    <button class="btn danger" @onclick="State.StopSimulator">@T("Остановить", "Stop")</button>
+                }
+                else
+                {
+                    <button class="btn primary" @onclick="State.StartSimulator">@T("Старт", "Start")</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (State.EditingChannel != null)
+{
+    <div class="modal-backdrop" @onclick="CancelEditChannel">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header"><span>@T("Настройки канала", "Channel settings")</span><button class="btn small" @onclick="CancelEditChannel">×</button></div>
+            <div class="modal-body form-grid">
+                <div class="form-field full"><span class="label">@T("Имя", "Name")</span><input class="field" @bind="_editName" /></div>
+                <div class="form-field"><span class="label">@T("Цвет", "Color")</span><input class="field" type="color" @bind="_editColor" /></div>
+                <div class="form-field"><span class="label">@T("Толщина", "Width")</span><input class="field" type="number" min="0.5" max="10" step="0.5" @bind="_editWidth" /></div>
+                <div class="form-field"><span class="label">@T("Линия", "Line")</span>
+                    <select class="field" @bind="_editLineStyle">
+                        <option value="Solid">@T("Сплошная", "Solid")</option>
+                        <option value="Dash">@T("Штриховая", "Dash")</option>
+                        <option value="Dot">@T("Пунктир", "Dot")</option>
+                        <option value="DashDot">@T("Штрих-пунктир", "Dash-dot")</option>
+                    </select>
+                </div>
+                <div class="form-field"><span class="label">@T("Сглаживание", "Smoothing")</span>
+                    <select class="field" @bind="_editSmooth">
+                        <option value="None">@T("Нет", "None")</option>
+                        <option value="MovingAverage">@T("Скользящее среднее", "Moving average")</option>
+                        <option value="Median">@T("Медиана", "Median")</option>
+                        <option value="Gaussian">@T("Гауссово", "Gaussian")</option>
+                        <option value="Exponential">@T("Экспоненциальное", "Exponential")</option>
+                    </select>
+                </div>
+                <div class="form-field"><span class="label">@T("Окно, точек", "Window, points")</span><input class="field" type="number" min="3" max="501" step="2" @bind="_editSmoothWindow" /></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CancelEditChannel">@T("Отмена", "Cancel")</button>
+                <button class="btn primary" @onclick="ApplyEditChannel">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (State.ShowRanges)
+{
+    <div class="modal-backdrop" @onclick="() => State.ShowRanges = false">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header"><span>@T("Диапазоны графика", "Plot ranges")</span><button class="btn small" @onclick="() => State.ShowRanges = false">×</button></div>
+            <div class="modal-body form-grid">
+                <label class="checkbox full"><input type="checkbox" @bind="PlotSettings.YAuto" /> @T("Автодиапазон Y", "Auto Y range")</label>
+                <div class="form-field"><span class="label">Y min</span><input class="field" @bind="_rangeYMin" /></div>
+                <div class="form-field"><span class="label">Y max</span><input class="field" @bind="_rangeYMax" /></div>
+                <label class="checkbox full"><input type="checkbox" @bind="PlotSettings.XAuto" /> @T("Автоокно X", "Auto X window")</label>
+                <div class="form-field"><span class="label">X min</span><input class="field" @bind="_rangeXMin" /></div>
+                <div class="form-field"><span class="label">X max</span><input class="field" @bind="_rangeXMax" /></div>
+                <div class="form-field full"><span class="label">@T("Хвост полярного графика", "Polar trail")</span><input class="field" type="number" min="10" max="10000" @bind="PlotSettings.PolarTrail" /></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="ResetView">@T("Сбросить вид", "Reset view")</button>
+                <button class="btn primary" @onclick="ApplyRanges">OK</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (State.ShowExportRange)
+{
+    <div class="modal-backdrop" @onclick="() => State.ShowExportRange = false">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header"><span>@T("Отрезок экспорта", "Export segment")</span><button class="btn small" @onclick="() => State.ShowExportRange = false">×</button></div>
+            <div class="modal-body form-grid">
+                <label class="checkbox full"><input type="checkbox" @bind="_exportUseX" /> @T("Отрезок по оси X", "X-axis segment")</label>
+                <div class="form-field"><span class="label">X from</span><input class="field" @bind="_exportXFrom" /></div>
+                <div class="form-field"><span class="label">X to</span><input class="field" @bind="_exportXTo" /></div>
+                @if (State.Mode == PlotMode.Time)
+                {
+                    <label class="checkbox full"><input type="checkbox" @bind="_exportUseY" /> @T("Обрезать по Y", "Crop by Y")</label>
+                    <div class="form-field"><span class="label">Y from</span><input class="field" @bind="_exportYFrom" /></div>
+                    <div class="form-field"><span class="label">Y to</span><input class="field" @bind="_exportYTo" /></div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="() => State.ShowExportRange = false">@T("Отмена", "Cancel")</button>
+                <button class="btn primary" @onclick="ConfirmExport">@T("Экспорт", "Export")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ElementReference _plotElement;
+    private ElementReference _consoleLog;
+    private ElementReference _splitterElement;
+    private DotNetObjectReference<Home>? _hotkeysReference;
+    private Timer? _renderTimer;
+    private string _svg = "";
+    private readonly List<string> _consoleLines = new();
+    private int _consoleTab;
+    private string _sendText = "";
+    private int _consoleHeight = 150;
+    private bool _consoleDirty;
+    private bool _draggingSplitter;
+    private double _splitterStartY;
+    private int _splitterStartHeight;
+    private bool _toolsOpen;
+
+    private bool _contextMenu;
+    private double _contextX, _contextY;
+    private bool _selecting, _dragMoved, _panning, _dragging3d, _suppressMarker;
+    private PlotRect _selection;
+    private (double X, double Y) _dragStart, _lastMouse, _mousePosition;
+
+    private string _editName = "", _editColor = "#00e5ff";
+    private float _editWidth = 2;
+    private LineKind _editLineStyle;
+    private SmoothKind _editSmooth;
+    private int _editSmoothWindow = 5;
+
+    private string _rangeYMin = "-1", _rangeYMax = "1", _rangeXMin = "0", _rangeXMax = "400";
+    private string _exportKind = "svg";
+    private bool _exportUseX, _exportUseY;
+    private string _exportXFrom = "0", _exportXTo = "400", _exportYFrom = "-1", _exportYTo = "1";
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        State.Initialize();
+        State.Changed += OnStateChanged;
+        _rangeYMin = PlotSettings.YMin.ToString(CultureInfo.InvariantCulture);
+        _rangeYMax = PlotSettings.YMax.ToString(CultureInfo.InvariantCulture);
+        _rangeXMin = PlotSettings.XMin.ToString(CultureInfo.InvariantCulture);
+        _rangeXMax = PlotSettings.XMax.ToString(CultureInfo.InvariantCulture);
+        if (int.TryParse(Environment.GetEnvironmentVariable("SERIALPLOTTER_CONSOLE"), out int consoleHeight))
+            _consoleHeight = Math.Clamp(consoleHeight, 86, 520);
+        _toolsOpen = Environment.GetEnvironmentVariable("SERIALPLOTTER_TOOLS") == "1";
+        _renderTimer = new Timer(_ => _ = InvokeAsync(RenderFrame), null, 0, 33);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _hotkeysReference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("spHotkeys.init", _hotkeysReference);
+            await JS.InvokeVoidAsync("spPlotWheel.init", _plotElement, _hotkeysReference);
+            await JS.InvokeVoidAsync("spSetTheme", State.ThemeName);
+        }
+        if (_consoleDirty)
+        {
+            _consoleDirty = false;
+            await JS.InvokeVoidAsync("spScrollToEnd", _consoleLog);
+        }
+    }
+
+    private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void RenderFrame()
+    {
+        if (_disposed)
+            return;
+        try
+        {
+            if (State.Mode == PlotMode.ThreeD && State.Spin3D && !_dragging3d)
+                State.RotationY += 0.004;
+
+            var newLines = State.DrainConsole();
+            foreach (string line in newLines)
+            {
+                _consoleLines.Add(line);
+                if (_consoleLines.Count > 1000)
+                    _consoleLines.RemoveRange(0, _consoleLines.Count - 1000);
+            }
+            _consoleDirty |= newLines.Count > 0;
+            _svg = BuildSvg(forExport: false);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Один плохой кадр не должен останавливать монитор.
+        }
+    }
+
+    private string BuildSvg(bool forExport)
+    {
+        var context = new PlotContext
+        {
+            Mode = State.Mode,
+            Visible = DataHub.Channels.Where(c => c.Visible).ToList(),
+            XIndex = State.XIndex,
+            RotX = State.RotationX,
+            RotY = State.RotationY,
+            Time3DAxis = State.Time3DAxis,
+            MouseX = forExport ? -1 : _mousePosition.X,
+            MouseY = forExport ? -1 : _mousePosition.Y,
+            Selection = forExport || _selection.Width <= 0 ? null : _selection,
+            ForExport = forExport,
+        };
+        return SvgPlotter.RenderSvg(context);
+    }
+
+    private string T(string ru, string en) => Lang.T(ru, en);
+
+    private int VisibleChannelCount() => DataHub.Channels.Count(c => c.Visible);
+
+    private IEnumerable<Channel> VisibleYChannels()
+    {
+        var visible = DataHub.Channels.Where(c => c.Visible).ToList();
+        var x = State.XIndex >= 0 && State.XIndex < DataHub.Count ? DataHub.ChannelAt(State.XIndex) : null;
+        return x == null ? visible : visible.Where(c => !ReferenceEquals(c, x));
+    }
+
+    private IEnumerable<string> VisibleConsole() =>
+        _consoleTab == 0 ? _consoleLines.Where(l => !l.Contains("] >> ")) : _consoleLines.Where(l => l.Contains("] >> "));
+
+    private async Task RefreshPorts() => await State.RefreshPortsAsync();
+
+    private void OnPortChanged(ChangeEventArgs e)
+    {
+        State.SelectedPort = e.Value?.ToString();
+        State.ScheduleSave();
+    }
+
+    private void OnBaudSelected(ChangeEventArgs e)
+    {
+        string baud = e.Value?.ToString() ?? "";
+        if (baud.Length > 0)
+        {
+            State.BaudText = baud;
+            State.ScheduleSave();
+        }
+    }
+
+    private void OnXIndexChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int index))
+            State.SetXIndex(index);
+    }
+
+    private async Task ToggleConnect() => await State.ToggleConnectAsync();
+
+    private void OnModeChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse(e.Value?.ToString(), out PlotMode mode))
+            State.Mode = mode;
+    }
+
+    private void OnGlobalSmoothChanged(ChangeEventArgs e)
+    {
+        if (Enum.TryParse(e.Value?.ToString(), out SmoothKind kind))
+            PlotSettings.GlobalSmooth = kind;
+        State.ScheduleSave();
+    }
+
+    private void OnLanguageChanged(ChangeEventArgs e) => State.SetLanguage(e.Value?.ToString() == "en");
+
+    private void OnThemeChanged(ChangeEventArgs e) => State.SetTheme(e.Value?.ToString() ?? "cyberpunk", JS);
+
+    private string ThemeButtonText => State.ThemeName switch
+    {
+        "light" => T("Светлая", "Light"),
+        "dark" => T("Тёмная", "Dark"),
+        _ => "Cyberpunk",
+    };
+
+    private void CycleTheme()
+    {
+        string next = State.ThemeName switch
+        {
+            "light" => "dark",
+            "dark" => "cyberpunk",
+            _ => "light",
+        };
+        State.SetTheme(next, JS);
+    }
+
+    private void ResetView()
+    {
+        PlotSettings.ResetView();
+        State.ShowRanges = false;
+        _contextMenu = false;
+    }
+
+    private void SetChannelVisible(Channel channel, ChangeEventArgs e)
+    {
+        channel.Visible = e.Value is bool value && value;
+        OnChannelConfigChanged();
+    }
+
+    private void OnChannelConfigChanged()
+    {
+        DataHub.NotifyChannelsChanged();
+        State.ScheduleSave();
+    }
+
+    private void BeginEditChannel(Channel channel)
+    {
+        State.EditingChannel = channel;
+        _editName = channel.Name;
+        _editColor = channel.Color;
+        _editWidth = channel.LineWidth;
+        _editLineStyle = channel.LineStyle;
+        _editSmooth = channel.Smooth;
+        _editSmoothWindow = channel.SmoothWindow;
+    }
+
+    private void CancelEditChannel() => State.EditingChannel = null;
+
+    private void ApplyEditChannel()
+    {
+        if (State.EditingChannel == null)
+            return;
+        var channel = State.EditingChannel;
+        if (!string.IsNullOrWhiteSpace(_editName))
+            channel.Name = _editName.Trim();
+        channel.Color = _editColor;
+        channel.LineWidth = Math.Clamp(_editWidth, 0.5f, 10f);
+        channel.LineStyle = _editLineStyle;
+        channel.Smooth = _editSmooth;
+        channel.SmoothWindow = Math.Clamp(_editSmoothWindow | 1, 3, 501);
+        State.EditingChannel = null;
+        OnChannelConfigChanged();
+    }
+
+    private void AddSimulatorChannel()
+    {
+        State.Sim.Channels.Add(new VirtualChannel
+        {
+            Name = $"CH{State.Sim.Channels.Count + 1}",
+            Wave = WaveKind.Sine,
+            Frequency = 1,
+            Amplitude = 1,
+        });
+    }
+
+    private void ApplyRanges()
+    {
+        if (TryParse(_rangeYMin, out double yMin)) PlotSettings.YMin = yMin;
+        if (TryParse(_rangeYMax, out double yMax)) PlotSettings.YMax = yMax;
+        if (TryParse(_rangeXMin, out double xMin)) PlotSettings.XMin = xMin;
+        if (TryParse(_rangeXMax, out double xMax)) PlotSettings.XMax = xMax;
+        State.ShowRanges = false;
+        State.ScheduleSave();
+    }
+
+    private static bool TryParse(string text, out double value) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+        double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
+
+    private async Task<(double X, double Y)> PointFromEvent(PointerEventArgs e)
+    {
+        try
+        {
+            var point = await JS.InvokeAsync<SvgPoint>("spSvgPoint", _plotElement, e.ClientX, e.ClientY);
+            return (point.X, point.Y);
+        }
+        catch
+        {
+            return (-1, -1);
+        }
+    }
+
+    private async Task OnSplitterDown(PointerEventArgs e)
+    {
+        _draggingSplitter = true;
+        _splitterStartY = e.ClientY;
+        _splitterStartHeight = _consoleHeight;
+        await JS.InvokeVoidAsync("spCapturePointer", _splitterElement, e.PointerId);
+    }
+
+    private void OnSplitterMove(PointerEventArgs e)
+    {
+        if (!_draggingSplitter)
+            return;
+        _consoleHeight = Math.Clamp(_splitterStartHeight + (int)(_splitterStartY - e.ClientY), 86, 520);
+    }
+
+    private void OnSplitterUp(PointerEventArgs e) => _draggingSplitter = false;
+
+    private async Task OnPointerDown(PointerEventArgs e)
+    {
+        _contextMenu = false;
+        var point = await PointFromEvent(e);
+        if (e.Button is 0 or 1)
+            await JS.InvokeVoidAsync("spCapturePointer", _plotElement, e.PointerId);
+        if (State.Mode == PlotMode.ThreeD)
+        {
+            if (e.Button == 0)
+            {
+                _dragging3d = true;
+                _lastMouse = point;
+            }
+            return;
+        }
+        if (State.Mode != PlotMode.Time)
+            return;
+
+        if (e.Button == 1)
+        {
+            InitViewFromCurrent();
+            _panning = true;
+            _lastMouse = point;
+        }
+        else if (e.Button == 0)
+        {
+            _selecting = true;
+            _dragMoved = false;
+            _dragStart = point;
+            _selection = new PlotRect(point.X, point.Y, 0, 0);
+        }
+    }
+
+    private async Task OnPointerMove(PointerEventArgs e)
+    {
+        var point = await PointFromEvent(e);
+        _mousePosition = point;
+        if (_dragging3d)
+        {
+            State.RotationY += (point.X - _lastMouse.X) * 0.01;
+            State.RotationX = Math.Clamp(State.RotationX + (point.Y - _lastMouse.Y) * 0.01, -1.5, 1.5);
+            _lastMouse = point;
+        }
+        else if (_panning)
+        {
+            PanBy(point);
+            _lastMouse = point;
+        }
+        else if (_selecting)
+        {
+            if (Math.Abs(point.X - _dragStart.X) > 4 || Math.Abs(point.Y - _dragStart.Y) > 4)
+                _dragMoved = true;
+            if (_dragMoved)
+            {
+                _selection = new PlotRect(
+                    Math.Min(_dragStart.X, point.X), Math.Min(_dragStart.Y, point.Y),
+                    Math.Abs(point.X - _dragStart.X), Math.Abs(point.Y - _dragStart.Y));
+            }
+        }
+    }
+
+    private async Task OnPointerUp(PointerEventArgs e)
+    {
+        var point = await PointFromEvent(e);
+        _mousePosition = point;
+        _dragging3d = _panning = false;
+        if (!_selecting)
+            return;
+        _selecting = false;
+
+        if (!_dragMoved)
+        {
+            if (_suppressMarker)
+                _suppressMarker = false;
+            else
+                PlaceMarker(point.X);
+        }
+        else if (_selection.Width > 8 && _selection.Height > 8)
+        {
+            ZoomTo(_selection);
+        }
+        _selection = new PlotRect();
+    }
+
+    private void OnPointerLeave(PointerEventArgs e)
+    {
+        _lastMouse = _mousePosition = (-1, -1);
+        _dragging3d = _panning = _selecting = false;
+        _selection = new PlotRect();
+    }
+
+    private void OnDoubleClick(MouseEventArgs e)
+    {
+        PlotSettings.ResetView();
+        _suppressMarker = true;
+    }
+
+    [JSInvokable]
+    public void OnPlotWheel(double x, double y, double deltaY, bool ctrlKey, bool altKey, bool shiftKey)
+    {
+        if (State.Mode != PlotMode.Time)
+            return;
+        _mousePosition = (x, y);
+        if (x < SvgPlotter.Plot.Left || x > SvgPlotter.Plot.Right ||
+            y < SvgPlotter.Plot.Top || y > SvgPlotter.Plot.Bottom)
+            return;
+
+        int direction = deltaY < 0 ? 1 : -1;
+        if (ctrlKey)
+            ZoomAt(_mousePosition, direction > 0 ? 0.8 : 1.25);
+        else if (altKey && shiftKey)
+            StretchY(_mousePosition, direction > 0 ? 0.8 : 1.25);
+        else if (altKey)
+            StretchX(_mousePosition, direction > 0 ? 0.8 : 1.25);
+        else if (shiftKey)
+            PanX(-direction * 0.15);
+        else
+            PanY(direction * 0.15);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnContextMenu(MouseEventArgs e)
+    {
+        if (State.Mode == PlotMode.Time)
+        {
+            _exportXFrom = PlotSettings.LastXMin.ToString("0.###", CultureInfo.InvariantCulture);
+            _exportXTo = PlotSettings.LastXMax.ToString("0.###", CultureInfo.InvariantCulture);
+            _exportYFrom = PlotSettings.LastYMin.ToString("0.###", CultureInfo.InvariantCulture);
+            _exportYTo = PlotSettings.LastYMax.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+        _contextX = e.OffsetX;
+        _contextY = e.OffsetY;
+        _contextMenu = true;
+    }
+
+    private void PlaceMarker(double x)
+    {
+        var rect = SvgPlotter.Plot;
+        if (x < rect.Left || x > rect.Right)
+            return;
+        double value = PlotSettings.LastXMin + (x - rect.Left) * (PlotSettings.LastXMax - PlotSettings.LastXMin) / rect.Width;
+        if (PlotSettings.MarkerA != null && PlotSettings.MarkerB != null)
+        {
+            PlotSettings.MarkerA = value;
+            PlotSettings.MarkerB = null;
+        }
+        else if (PlotSettings.MarkerA == null)
+        {
+            PlotSettings.MarkerA = value;
+        }
+        else
+        {
+            PlotSettings.MarkerB = value;
+        }
+    }
+
+    private void InitViewFromCurrent()
+    {
+        PlotSettings.ViewXMin ??= PlotSettings.LastXMin;
+        PlotSettings.ViewXMax ??= PlotSettings.LastXMax;
+        PlotSettings.ViewYMin ??= PlotSettings.LastYMin;
+        PlotSettings.ViewYMax ??= PlotSettings.LastYMax;
+    }
+
+    private void ZoomAt((double X, double Y) point, double factor)
+    {
+        var rect = SvgPlotter.Plot;
+        double x0 = PlotSettings.ViewXMin ?? PlotSettings.LastXMin;
+        double x1 = PlotSettings.ViewXMax ?? PlotSettings.LastXMax;
+        double spanX = Math.Clamp((x1 - x0) * factor, 2, DataHub.HISTORY);
+        double fx = Math.Clamp((point.X - rect.Left) / rect.Width, 0, 1);
+        double anchorX = x0 + fx * (x1 - x0);
+        double newX0 = anchorX - fx * spanX, newX1 = newX0 + spanX;
+        if (State.XIndex < 0 && newX0 < 0)
+        {
+            newX1 -= newX0;
+            newX0 = 0;
+        }
+        PlotSettings.ViewXMin = newX0;
+        PlotSettings.ViewXMax = newX1;
+
+        double y0 = PlotSettings.ViewYMin ?? PlotSettings.LastYMin;
+        double y1 = PlotSettings.ViewYMax ?? PlotSettings.LastYMax;
+        double spanY = Math.Max((y1 - y0) * factor, 1e-9);
+        double fy = Math.Clamp((rect.Bottom - point.Y) / rect.Height, 0, 1);
+        double anchorY = y0 + fy * (y1 - y0);
+        PlotSettings.ViewYMin = anchorY - fy * spanY;
+        PlotSettings.ViewYMax = PlotSettings.ViewYMin + spanY;
+    }
+
+    private void StretchX((double X, double Y) point, double factor)
+    {
+        var rect = SvgPlotter.Plot;
+        double x0 = PlotSettings.ViewXMin ?? PlotSettings.LastXMin;
+        double x1 = PlotSettings.ViewXMax ?? PlotSettings.LastXMax;
+        double span = Math.Clamp((x1 - x0) * factor, 2, DataHub.HISTORY);
+        double fraction = Math.Clamp((point.X - rect.Left) / rect.Width, 0, 1);
+        double anchor = x0 + fraction * (x1 - x0);
+        double new0 = anchor - fraction * span, new1 = new0 + span;
+        if (State.XIndex < 0 && new0 < 0)
+        {
+            new1 -= new0;
+            new0 = 0;
+        }
+        PlotSettings.ViewXMin = new0;
+        PlotSettings.ViewXMax = new1;
+    }
+
+    private void StretchY((double X, double Y) point, double factor)
+    {
+        var rect = SvgPlotter.Plot;
+        double y0 = PlotSettings.ViewYMin ?? PlotSettings.LastYMin;
+        double y1 = PlotSettings.ViewYMax ?? PlotSettings.LastYMax;
+        double span = Math.Max((y1 - y0) * factor, 1e-9);
+        double fraction = Math.Clamp((rect.Bottom - point.Y) / rect.Height, 0, 1);
+        double anchor = y0 + fraction * (y1 - y0);
+        PlotSettings.ViewYMin = anchor - fraction * span;
+        PlotSettings.ViewYMax = PlotSettings.ViewYMin + span;
+    }
+
+    private void PanX(double fraction)
+    {
+        InitViewFromCurrent();
+        if (PlotSettings.ViewXMin is not { } x0 || PlotSettings.ViewXMax is not { } x1)
+            return;
+        double delta = (x1 - x0) * fraction;
+        double new0 = x0 + delta, new1 = x1 + delta;
+        if (State.XIndex < 0 && new0 < 0)
+        {
+            new1 -= new0;
+            new0 = 0;
+        }
+        PlotSettings.ViewXMin = new0;
+        PlotSettings.ViewXMax = new1;
+    }
+
+    private void PanY(double fraction)
+    {
+        InitViewFromCurrent();
+        if (PlotSettings.ViewYMin is not { } y0 || PlotSettings.ViewYMax is not { } y1)
+            return;
+        double delta = (y1 - y0) * fraction;
+        PlotSettings.ViewYMin = y0 + delta;
+        PlotSettings.ViewYMax = y1 + delta;
+    }
+
+    private void ZoomTo(PlotRect selection)
+    {
+        var rect = SvgPlotter.Plot;
+        double x0 = PlotSettings.LastXMin + (selection.Left - rect.Left) * (PlotSettings.LastXMax - PlotSettings.LastXMin) / rect.Width;
+        double x1 = PlotSettings.LastXMin + (selection.Right - rect.Left) * (PlotSettings.LastXMax - PlotSettings.LastXMin) / rect.Width;
+        if (x1 - x0 < 1e-9)
+            return;
+        PlotSettings.ViewXMin = State.XIndex < 0 ? Math.Max(0, x0) : x0;
+        PlotSettings.ViewXMax = x1;
+
+        double y0 = PlotSettings.LastYMin + (rect.Bottom - selection.Bottom) * (PlotSettings.LastYMax - PlotSettings.LastYMin) / rect.Height;
+        double y1 = PlotSettings.LastYMin + (rect.Bottom - selection.Top) * (PlotSettings.LastYMax - PlotSettings.LastYMin) / rect.Height;
+        if (y1 < y0)
+            (y0, y1) = (y1, y0);
+        PlotSettings.ViewYMin = y0;
+        PlotSettings.ViewYMax = y1;
+    }
+
+    private void PanBy((double X, double Y) point)
+    {
+        var rect = SvgPlotter.Plot;
+        double dx = (point.X - _lastMouse.X) * (PlotSettings.LastXMax - PlotSettings.LastXMin) / rect.Width;
+        double dy = (point.Y - _lastMouse.Y) * (PlotSettings.LastYMax - PlotSettings.LastYMin) / rect.Height;
+        if (PlotSettings.ViewXMin is { } x0 && PlotSettings.ViewXMax is { } x1)
+        {
+            PlotSettings.ViewXMin = x0 - dx;
+            PlotSettings.ViewXMax = x1 - dx;
+        }
+        if (PlotSettings.ViewYMin is { } y0 && PlotSettings.ViewYMax is { } y1)
+        {
+            PlotSettings.ViewYMin = y0 + dy;
+            PlotSettings.ViewYMax = y1 + dy;
+        }
+    }
+
+    private void OnSendKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            SendCurrent();
+    }
+
+    private void SendCurrent()
+    {
+        string line = _sendText.Trim();
+        if (line.Length == 0)
+            return;
+        if (State.SendLine(line))
+            _sendText = "";
+    }
+
+    private void StartExport(string kind)
+    {
+        _contextMenu = false;
+        _exportKind = kind;
+        if (State.Mode == PlotMode.Time)
+        {
+            State.ShowExportRange = true;
+        }
+        else
+        {
+            _ = ConfirmExport();
+        }
+    }
+
+    private async Task ConfirmExport()
+    {
+        State.ShowExportRange = false;
+        bool useX = _exportUseX;
+        double xFrom = 0, xTo = 0, yFrom = 0, yTo = 0;
+        if (useX)
+        {
+            if (!TryParse(_exportXFrom, out xFrom) || !TryParse(_exportXTo, out xTo))
+                return;
+            if (xTo < xFrom)
+                (xFrom, xTo) = (xTo, xFrom);
+        }
+        bool useY = State.Mode == PlotMode.Time && _exportUseY;
+        if (useY)
+        {
+            if (!TryParse(_exportYFrom, out yFrom) || !TryParse(_exportYTo, out yTo))
+                return;
+            if (yTo < yFrom)
+                (yFrom, yTo) = (yTo, yFrom);
+        }
+
+        if (useX)
+        {
+            PlotSettings.ViewXMin = xFrom;
+            PlotSettings.ViewXMax = xTo;
+        }
+        if (useY)
+        {
+            PlotSettings.ViewYMin = yFrom;
+            PlotSettings.ViewYMax = yTo;
+        }
+
+        switch (_exportKind)
+        {
+            case "png":
+                await ExportPngAsync();
+                break;
+            case "csv":
+                await ExportCsvAsync(useX, xFrom, xTo);
+                break;
+            default:
+                await ExportSvgAsync();
+                break;
+        }
+
+        if (useX || useY)
+            PlotSettings.ResetView();
+    }
+
+    private async Task ExportSvgAsync()
+    {
+        string svg = BuildSvg(forExport: true);
+        string? file = await ExportService.SaveTextAsync(
+            T("Сохранить снимок графика", "Save plot snapshot"),
+            "serialplot.svg", "SVG", new[] { ".svg" }, svg);
+        if (file != null)
+            State.Status = $"{T("снимок сохранён", "snapshot saved")}: {file}";
+    }
+
+    private async Task ExportPngAsync()
+    {
+        string svg = BuildSvg(forExport: true);
+        string dataUrl = await JS.InvokeAsync<string>("spSvgToPngDataUrl", svg, SvgPlotter.Width, SvgPlotter.Height);
+        const string prefix = "data:image/png;base64,";
+        if (!dataUrl.StartsWith(prefix))
+            return;
+        byte[] bytes = Convert.FromBase64String(dataUrl[prefix.Length..]);
+        string? file = await ExportService.SaveBytesAsync(
+            T("Сохранить снимок графика", "Save plot snapshot"),
+            "serialplot.png", "PNG", new[] { ".png" }, bytes);
+        if (file != null)
+            State.Status = $"{T("снимок сохранён", "snapshot saved")}: {file}";
+    }
+
+    private async Task ExportCsvAsync(bool useRange, double xFrom, double xTo)
+    {
+        if (DataHub.Count == 0)
+            return;
+        string csv = State.BuildCsv(useRange, xFrom, xTo);
+        string? file = await ExportService.SaveTextAsync(
+            T("Экспорт данных каналов", "Export channel data"),
+            "serialplot.csv", "CSV", new[] { ".csv" }, csv);
+        if (file != null)
+            State.Status = $"CSV {T("сохранён", "saved")}: {file}";
+    }
+
+    [JSInvokable]
+    public void OnHotkey(string key, bool ctrlKey, bool altKey, bool shiftKey)
+    {
+        switch (key)
+        {
+            case "F1":
+                State.ShowHelp = !State.ShowHelp;
+                break;
+            case "F12":
+                CycleTheme();
+                break;
+            case "Escape":
+                State.ShowHelp = State.ShowSimulator = State.ShowRanges = State.ShowExportRange = false;
+                State.EditingChannel = null;
+                State.ErrorMessage = null;
+                _contextMenu = false;
+                break;
+            case " ":
+                State.TogglePause();
+                break;
+            case "ArrowLeft" when State.Mode == PlotMode.Time:
+                PanX(-0.15);
+                break;
+            case "ArrowRight" when State.Mode == PlotMode.Time:
+                PanX(0.15);
+                break;
+            case "ArrowUp" when State.Mode == PlotMode.Time:
+                PanY(0.15);
+                break;
+            case "ArrowDown" when State.Mode == PlotMode.Time:
+                PanY(-0.15);
+                break;
+            case "+" or "=" when State.Mode == PlotMode.Time:
+                ZoomAt(PlotCenter(), 0.8);
+                break;
+            case "-" when State.Mode == PlotMode.Time:
+                ZoomAt(PlotCenter(), 1.25);
+                break;
+            case "0" when State.Mode == PlotMode.Time:
+                PlotSettings.ResetView();
+                break;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static (double X, double Y) PlotCenter() =>
+        (SvgPlotter.Plot.Left + SvgPlotter.Plot.Width / 2, SvgPlotter.Plot.Top + SvgPlotter.Plot.Height / 2);
+
+    [JSInvokable]
+    public void ToggleHelp() => State.ShowHelp = !State.ShowHelp;
+
+    [JSInvokable]
+    public void CloseHelp() => State.ShowHelp = false;
+
+    private string HelpText => Lang.English
+        ? """
+TIME MODE — MOUSE
+
+  Left click              marker A, then B, then the cycle restarts
+  Left drag               zoom rectangle (both axes)
+  Middle button           pan
+  Double click            reset view and markers
+
+MOUSE WHEEL
+
+  Ctrl+wheel              zoom both axes to cursor
+  Alt+wheel               stretch/compress horizontally
+  Alt+Shift+wheel         stretch/compress vertically
+  Shift+wheel             navigate left/right
+  Wheel                   navigate up/down
+
+KEYBOARD
+
+  Arrows                  pan the plot
+  + / -                   zoom in / out from the center
+  0                       reset view and markers
+  Space                   pause / resume data recording
+  F12                     cycle theme: light -> dark -> cyberpunk
+  F1                      this help
+  Escape                  close menus and dialogs
+
+OTHER
+
+  Right-click on plot     export PNG / SVG / CSV
+  Enter in the send box   send to port
+
+3D MODE
+
+  Left drag               rotate the scene
+"""
+        : """
+РЕЖИМ «ВРЕМЯ» — МЫШЬ
+
+  Клик левой кнопкой      маркер A, затем B, затем цикл заново
+  Протяжка левой кнопкой  рамка зума (обе оси)
+  Средняя кнопка          панорама
+  Двойной клик            сброс вида и маркеров
+
+КОЛЕСО МЫШИ
+
+  Ctrl+колесо             зум обеих осей к курсору
+  Alt+колесо              растяжение/сжатие по горизонтали
+  Alt+Shift+колесо        растяжение/сжатие по вертикали
+  Shift+колесо            навигация влево/вправо
+  Колесо                  навигация вверх/вниз
+
+КЛАВИАТУРА
+
+  Стрелки                 панорама графика
+  + / -                   зум от центра
+  0                       сброс вида и маркеров
+  Пробел                  пауза / продолжить запись
+  F12                     тема: светлая -> тёмная -> cyberpunk
+  F1                      эта справка
+  Escape                  закрыть меню и диалоги
+
+ПРОЧЕЕ
+
+  Правый клик по графику  экспорт PNG / SVG / CSV
+  Enter в строке отправки отправить в порт
+
+РЕЖИМ «3D»
+
+  Перетаскивание левой    вращение сцены
+""";
+
+    private sealed class SvgPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        State.Changed -= OnStateChanged;
+        _renderTimer?.Dispose();
+        try
+        {
+            _ = JS.InvokeVoidAsync("spPlotWheel.dispose");
+            _ = JS.InvokeVoidAsync("spHotkeys.dispose");
+        }
+        catch { }
+        _hotkeysReference?.Dispose();
+        State.SaveSettings();
+    }
+}
