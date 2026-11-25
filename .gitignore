@@ -20,3 +20,6 @@ publish/
 # OS files
 Thumbs.db
 .DS_Store
+
+# Local SFX payload (generated from Blazor/publish)
+Blazor/tools/sfxstub/app.zip

@@ -34,6 +34,20 @@ dotnet publish SerialPlotter.Blazor.csproj -c Release -o publish
 
 Результат — `publish/SerialPlotter.exe` рядом с DLL и ресурсами MAUI / Windows App SDK.
 
+### Single-file SFX
+
+Штатный `PublishSingleFile` для MAUI/WinUI не используется: такой exe падает с SxS-ошибкой.
+Вместо него собирается SFX-лаунчер на .NET Framework 4.7.2, который при первом запуске
+распаковывает self-contained приложение в `%LOCALAPPDATA%\SerialPlotter\App`.
+
+```bash
+dotnet publish SerialPlotter.Blazor.csproj -c Release -r win-x64 --self-contained true -o publish
+powershell -NoProfile -Command 'Compress-Archive -Path publish\* -DestinationPath tools\sfxstub\app.zip -Force'
+dotnet build tools/sfxstub/sfxstub.csproj -c Release
+```
+
+Готовый один файл: `tools/sfxstub/bin/Release/net472/SerialPlotter.exe`.
+
 ## Что перенесено
 
 - COM-порт: подключение, бодрейт, DTR, кодировки, отправка строк.
